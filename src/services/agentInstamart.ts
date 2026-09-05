@@ -26,6 +26,16 @@ export interface InstamartRecipeOrder {
   state?: InstamartShoppingState;
 }
 
+export interface InstamartOrderTracking {
+  sessionId: string;
+  orderId: string;
+  status: string;
+  etaMinutes?: number;
+  etaText?: string;
+  details: unknown;
+  state: InstamartShoppingState;
+}
+
 export interface InstamartShoppingState {
   sessionId: string;
   phase: 'idle' | 'selected' | 'cart_ready' | 'awaiting_confirmation' | 'ordered' | 'failed';
@@ -68,6 +78,13 @@ export class AgentInstamart {
       items: ingredients.filter(item => !item.inPantry).map(({ name, quantity, unit }) => ({ name, quantity, unit })),
       confirmed: true,
       ...context,
+    });
+  }
+
+  static async trackLatestOrder(state: InstamartShoppingState): Promise<InstamartOrderTracking> {
+    return request<InstamartOrderTracking>('/api/order-status', {
+      sessionId: state.sessionId,
+      priorState: state,
     });
   }
 }

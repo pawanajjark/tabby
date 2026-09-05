@@ -35,3 +35,12 @@ export interface CartPreparation {
   paymentMethod: string;
   expiresAt: number;
 }
+
+export interface OrderTracking {
+  sessionId: string;
+  orderId: string;
+  status: string;
+  etaMinutes?: number;
+  etaText?: string;
+  details: unknown;
+}

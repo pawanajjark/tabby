@@ -1635,6 +1635,10 @@ function selectedHomeDeliveryAddress(): { addressLine: string; label: string } |
 function synchronizedShoppingState(sessionId: string): InstamartShoppingState | undefined {
   const row = householdGateway.shoppingAgentStates().find(candidate => candidate.sessionId === sessionId);
   if (!row) return undefined;
+  return shoppingStateFromRow(row);
+}
+
+function shoppingStateFromRow(row: ReturnType<typeof householdGateway.shoppingAgentStates>[number]): InstamartShoppingState {
   const parse = <T>(value: string, fallback: T): T => {
     try { return JSON.parse(value) as T; } catch { return fallback; }
   };
@@ -1649,6 +1653,19 @@ function synchronizedShoppingState(sessionId: string): InstamartShoppingState | 
     toolContext: parse(row.toolContextJson, []),
     pendingConfirmation: row.pendingConfirmation,
   };
+}
+
+function latestOrderedShoppingState(preferredSessionId: string): InstamartShoppingState | undefined {
+  const preferred = synchronizedShoppingState(preferredSessionId);
+  if (preferred?.phase === 'ordered') return preferred;
+  const latest = householdGateway.shoppingAgentStates()
+    .filter(row => row.phase === 'ordered')
+    .sort((left, right) => {
+      const leftUpdated = left.updatedAt.microsSinceUnixEpoch;
+      const rightUpdated = right.updatedAt.microsSinceUnixEpoch;
+      return leftUpdated === rightUpdated ? 0 : leftUpdated > rightUpdated ? -1 : 1;
+    })[0];
+  return latest ? shoppingStateFromRow(latest) : undefined;
 }
 
 async function persistShoppingState(state: InstamartShoppingState): Promise<void> {
@@ -1767,6 +1784,23 @@ async function executeIntent(
   analysis: Awaited<ReturnType<typeof TabbyBrain.analyze>>,
 ): Promise<{ message: Omit<ConversationMessage, 'id'>; summary: string }> {
   if (intent === 'grocery') {
+    if (isOrderTrackingRequest(text)) {
+      const state = latestOrderedShoppingState(`conversation:${activeConversationId}`);
+      if (!state) {
+        const response = 'I could not find a completed Instamart order in your synchronized shopping history.';
+        return { message: { role: 'assistant', agent: intent, text: response }, summary: response };
+      }
+      const tracking = await AgentInstamart.trackLatestOrder(state);
+      try {
+        await persistShoppingState(tracking.state);
+      } catch (cause) {
+        console.warn('Order status was fetched, but its latest tracking context could not be synchronized:', cause);
+      }
+      const status = tracking.status.replace(/[_-]+/g, ' ').toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
+      const eta = tracking.etaText || (tracking.etaMinutes !== undefined ? `${tracking.etaMinutes} minutes` : 'not currently available');
+      const response = `Order ${tracking.orderId} is ${status}. Latest ETA: ${eta}.`;
+      return { message: { role: 'assistant', agent: intent, text: response }, summary: response };
+    }
     const pantryCommand = parsePantryCommand(text);
     if (pantryCommand) {
       const { name, quantity, unit } = pantryCommand;
@@ -1816,6 +1850,10 @@ async function executeIntent(
   );
   const response = generated || 'The AI connection could not complete that request.';
   return { message: { role: 'assistant', agent: 'general', text: response }, summary: response.slice(0, 120) };
+}
+
+function isOrderTrackingRequest(text: string): boolean {
+  return /\b(?:track|tracking|eta|delivery status|where(?:'s| is) my order)\b|\bstatus\b.{0,24}\border\b|\border\b.{0,24}\bstatus\b/i.test(text);
 }
 
 async function routeMessage(text: string, responseMessageId?: string) {

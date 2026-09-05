@@ -29,7 +29,7 @@ const INTENT_RULES: Array<[AgentIntent, RegExp]> = [
   ['billing', /\b(bill|expense|receipt|split|paid|owe|owed|cost|total|reimburse)\b|(?:₹|rs\.?|inr|\$)\s*[\d,]+|(?:^|\n).+[-:]\s*\d+(?:\.\d{1,2})?\s*$/im],
   ['context', /\b(i like|i love|i prefer|i hate|i don't like|i dislike|i avoid|i eat|i don't eat|except when|allergic|allergy|vegetarian|vegan|eggetarian|halal|jain|diet|preference|preferences|who likes|who eats|what do we know|remember)\b/i],
   ['chef', /\b(recipe|recipes|how (?:to|do i|can i) (?:cook|make|bake|prepare)|what can (?:i|we) (?:cook|make)|what should (?:i|we) (?:cook|make)|suggest (?:a |some )?(?:recipe|meal|dinner|lunch)|let's cook|cook (?:something|dinner|lunch|breakfast)|(?:(?:i\s+)?(?:want|wanna|would like|plan|planning)\s+)?(?:to\s+)?(?:cook|make|bake|prepare)\s+(?:a\s+|an\s+|some\s+|the\s+)?[a-z][a-z -]+)\b/i],
-  ['grocery', /\b(bought|buy|pantry|grocery|groceries|restock|stock|shopping|ran out|need more)\b/i],
+  ['grocery', /\b(bought|buy|pantry|grocery|groceries|restock|stock|shopping|ran out|need more|track(?:ing)?|delivery|delivered|order status|eta)\b|\bwhere(?:'s| is) my order\b|\bstatus\b.{0,24}\border\b|\border\b.{0,24}\bstatus\b/i],
 ];
 
 const SAFE_SHARED_CATEGORIES = new Set<MemoryCategory>(['diet', 'allergy', 'food_preference', 'routine', 'household_note']);
@@ -129,7 +129,7 @@ export class TabbyBrain {
 Intent Routing Rules:
 - "context": When the user states, updates, refines, queries, or clarifies personal/household preferences, food likes/dislikes, dietary rules, habits, allergies, or exceptions.
 - "chef": ONLY when the user explicitly requests a recipe, asks how to cook/make a dish, or asks for meal suggestions right now (e.g. "How do I make biriyani?", "Give me a dinner recipe", "What can I cook?").
-- "grocery": When discussing buying items, restocking, shopping lists, or pantry additions.
+- "grocery": When discussing buying items, restocking, shopping lists, pantry additions, or tracking an Instamart order and its delivery ETA.
 - "billing": When discussing receipts, expenses, paying bills, splitting costs.
 - "general": General conversation or queries that don't match above.
 

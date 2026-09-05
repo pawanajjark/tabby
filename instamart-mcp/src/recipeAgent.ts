@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createShoppingStateStore, emptyShoppingState, type ShoppingStateStore } from './shoppingState.js';
 import { payload } from './toolResult.js';
-import type { CartPreparation, ProductMatch, RecipeItem, ToolClient } from './types.js';
+import type { CartPreparation, OrderTracking, ProductMatch, RecipeItem, ToolClient } from './types.js';
 
 export class RecipeCheckoutAgent {
   constructor(private readonly client: ToolClient, private readonly stateStore: ShoppingStateStore = createShoppingStateStore()) {}
@@ -111,6 +111,57 @@ export class RecipeCheckoutAgent {
     await this.stateStore.save(state);
     return result;
   }
+
+  async trackLatest(sessionId: string): Promise<OrderTracking> {
+    const state = await this.stateStore.load(sessionId);
+    if (!state) throw new Error('No synchronized Instamart order was found to track.');
+    const orderId = orderIdFromState(state);
+    if (!orderId) throw new Error('The latest shopping state does not contain an Instamart order ID.');
+
+    let result: unknown;
+    let toolName = 'get_delivery_status';
+    try {
+      result = await this.client.callTool(toolName, { orderId });
+    } catch {
+      toolName = 'track_order';
+      result = await this.client.callTool(toolName, { orderId });
+    }
+    const details = payload(result);
+    const status = String(details?.status ?? details?.deliveryStatus ?? details?.delivery_status ?? details?.state ?? 'Status unavailable');
+    const etaValue = details?.etaMinutes ?? details?.eta_minutes;
+    const etaMinutes = Number.isFinite(Number(etaValue)) ? Number(etaValue) : undefined;
+    const etaTextValue = details?.etaText ?? details?.eta ?? details?.estimatedDeliveryTime ?? details?.estimated_delivery_time;
+    const etaText = etaTextValue === undefined || etaTextValue === null ? undefined : String(etaTextValue);
+
+    state.toolContext = [
+      ...state.toolContext,
+      { name: toolName, arguments: { orderId }, result },
+    ].slice(-40);
+    await this.stateStore.save(state);
+    return { sessionId, orderId, status, etaMinutes, etaText, details };
+  }
+}
+
+export function orderIdFromState(state: { toolContext: Array<{ result: unknown }> }): string {
+  for (const entry of [...state.toolContext].reverse()) {
+    const orderId = nestedOrderId(entry.result);
+    if (orderId) return orderId;
+  }
+  return '';
+}
+
+function nestedOrderId(value: unknown, depth = 0): string {
+  if (!value || typeof value !== 'object' || depth > 4) return '';
+  const record = value as Record<string, unknown>;
+  for (const key of ['orderId', 'order_id', 'id']) {
+    const candidate = record[key];
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+  }
+  for (const key of ['data', 'result', 'order', 'details', 'structuredContent']) {
+    const candidate = nestedOrderId(record[key], depth + 1);
+    if (candidate) return candidate;
+  }
+  return '';
 }
 
 function asArray(value: unknown): any[] {

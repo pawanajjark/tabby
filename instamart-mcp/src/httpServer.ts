@@ -53,6 +53,15 @@ const server = createServer(async (request, response) => {
       const agent = new RecipeCheckoutAgent(client, stateStoreFor(request));
       return send(response, 200, unwrapToolResult(await agent.checkout(body.sessionId || '', body.confirmed === true)));
     }
+    if (request.method === 'POST' && request.url === '/api/order-status') {
+      const body = await jsonBody(request) as RecipeRequestBody;
+      if (!body.sessionId) throw new Error('A shopping session ID is required to track an order.');
+      const store = stateStoreFor(request);
+      await hydratePriorState(store, body.sessionId, body.priorState);
+      const agent = new RecipeCheckoutAgent(client, store);
+      const tracking = await agent.trackLatest(body.sessionId);
+      return send(response, 200, { ...tracking, state: await store.load(body.sessionId) });
+    }
     if (request.method === 'POST' && request.url === '/api/chat') {
       const body = await jsonBody(request) as { sessionId?: string; messages?: ChatMessage[] };
       if (!body.sessionId) throw new Error('A chat session ID is required.');

@@ -29,3 +29,10 @@ test('the parent development command owns the Instamart service lifecycle', () =
   assert.equal(packageJson.scripts.dev, 'node scripts/dev.mjs');
   assert.equal(packageJson.scripts['dev:instamart'], 'npm --prefix instamart-mcp run dev');
 });
+
+test('order status requests use the latest synchronized shopping state and persist tracking results', () => {
+  assert.match(mainSource, /latestOrderedShoppingState\(`conversation:\$\{activeConversationId\}`\)/);
+  assert.match(mainSource, /AgentInstamart\.trackLatestOrder\(state\)/);
+  assert.match(mainSource, /await persistShoppingState\(tracking\.state\)/);
+  assert.match(mainSource, /Latest ETA:/);
+});

@@ -63,8 +63,8 @@ export class MockInstamartClient implements ToolClient {
     if (name === 'get_payment_options') return success({ methods: [{ id: 'COD', displayName: 'Cash on delivery', enabled: true }] });
     if (name === 'checkout') return success({ orderId: `DEV-${Date.now()}`, status: 'CONFIRMED', paymentMethod: args.paymentMethod || 'COD', addressId: args.addressId, cartTotal: this.total() }, 'Instamart developer order placed successfully');
     if (name === 'get_orders') return success({ orders: [] });
-    if (name === 'track_order' || name === 'get_delivery_status') return success({ status: 'DEVELOPER_ORDER', etaMinutes: 10 });
-    if (name === 'get_order_details') return success({ orderId: args.orderId, status: 'DEVELOPER_ORDER' });
+    if (name === 'track_order' || name === 'get_delivery_status') return success({ orderId: args.orderId, status: 'OUT_FOR_DELIVERY', etaMinutes: 10 });
+    if (name === 'get_order_details') return success({ orderId: args.orderId, status: 'OUT_FOR_DELIVERY' });
     if (name === 'create_address') return success({ id: 'dev-created-address', ...args });
     if (name === 'delete_address') return success({ deleted: true });
     if (name === 'your_go_to_items') return success({ products: [] });

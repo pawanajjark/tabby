@@ -87,3 +87,18 @@ test('reduces compound recipe labels to concrete Instamart searches', async () =
   assert.deepEqual(searches, ['paneer', 'coriander powder']);
   assert.deepEqual(prepared.matches.map(match => match.productName), ['Fresh Malai Paneer', 'Coriander Powder']);
 });
+
+test('tracks the latest checked-out order and stores the refreshed delivery context', async () => {
+  const store = new MemoryShoppingStateStore();
+  const agent = new RecipeCheckoutAgent(new MockInstamartClient(), store);
+  const prepared = await agent.prepare([{ name: 'rice', quantity: 1, unit: 'kg' }], 'conversation:tracking');
+  const checkout = await agent.checkout(prepared.sessionId, true) as any;
+  const tracking = await agent.trackLatest(prepared.sessionId);
+  const state = await store.load(prepared.sessionId);
+
+  assert.equal(tracking.orderId, checkout.data.orderId);
+  assert.equal(tracking.status, 'OUT_FOR_DELIVERY');
+  assert.equal(tracking.etaMinutes, 10);
+  assert.equal(state?.toolContext.at(-1)?.name, 'get_delivery_status');
+  assert.equal(state?.phase, 'ordered');
+});

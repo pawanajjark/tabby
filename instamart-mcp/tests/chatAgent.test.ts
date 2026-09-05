@@ -28,6 +28,11 @@ test('plans pack quantity, persists the selected SKU, and checks out after a sep
   const restartedAgent = new InstamartChatAgent(client, {}, state);
   const order = await restartedAgent.reply('chat-3', [{ role: 'user', content: 'yeah, go ahead and order' }]);
   assert.match(JSON.stringify(order.toolCalls[0].result), /DEV-/);
+
+  const tracking = await restartedAgent.reply('chat-3', [{ role: 'user', content: 'where is my order and what is the ETA?' }]);
+  assert.equal(tracking.toolCalls[0].name, 'get_delivery_status');
+  assert.match(tracking.message, /Out For Delivery/);
+  assert.match(tracking.message, /10 minutes/);
 });
 
 test('rejects invented update_cart arguments instead of silently emptying the cart', async () => {

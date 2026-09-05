@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { orderIdFromState } from './recipeAgent.js';
 import { unwrapToolResult } from './toolResult.js';
 import type { McpToolDefinition, ToolClient } from './types.js';
 import { createShoppingStateStore, emptyShoppingState, type SelectedItem, type ShoppingAgentState, type ShoppingStateStore } from './shoppingState.js';
@@ -134,6 +135,17 @@ export class InstamartChatAgent {
       return { message: summarizeOrder(result), toolCalls: [{ name: 'checkout', arguments: { addressId: state.addressId, paymentMethod: preferredPayment(state.payment) }, result }], aiEnabled: Boolean(this.openai) };
     }
 
+    if (isOrderTrackingRequest(userText)) {
+      const orderId = orderIdFromState(state);
+      if (!orderId) {
+        return { message: 'I could not find a checked-out order in this shopping session.', toolCalls: [], aiEnabled: Boolean(this.openai) };
+      }
+      const calls: ChatToolCall[] = [];
+      const result = await this.callAndRecord(state, 'get_delivery_status', { orderId }, calls);
+      await this.stateStore.save(state);
+      return { message: trackingSummary(orderId, result), toolCalls: calls, aiEnabled: Boolean(this.openai) };
+    }
+
     const request = extractItemRequest(userText);
     const refersToSelection = /\b(add (?:it|them|everything)|put (?:it|them) in (?:the )?cart)\b/i.test(userText);
     const wantsCheckout = /\b(check\s*out|checkout|place (?:the )?order|order (?:it|them|everything|now))\b/i.test(userText);
@@ -256,6 +268,15 @@ function checkoutReview(state: ShoppingAgentState): string {
   return `Developer checkout review\n\n${lines}\n\nDelivery address ID: ${state.addressId}\nPayment: ${preferredPayment(state.payment)}\nTotal: ₹${total}\n\nReply “yes, place the order” to confirm.`;
 }
 function summarizeOrder(result: unknown): string { const data = resultData(result); return `Instamart developer order placed successfully. Order ${data?.orderId || 'created'} is ${data?.status || 'confirmed'}.`; }
+function isOrderTrackingRequest(text: string): boolean { return /\b(?:track|tracking|eta|delivery status|where(?:'s| is) my order)\b|\bstatus\b.{0,24}\border\b|\border\b.{0,24}\bstatus\b/i.test(text); }
+function trackingSummary(orderId: string, result: unknown): string {
+  const data = resultData(result);
+  const status = String(data?.status ?? data?.deliveryStatus ?? data?.delivery_status ?? 'Status unavailable')
+    .replace(/[_-]+/g, ' ').toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
+  const etaValue = data?.etaText ?? data?.eta ?? data?.etaMinutes ?? data?.eta_minutes;
+  const eta = etaValue === undefined ? 'not currently available' : typeof etaValue === 'number' ? `${etaValue} minutes` : String(etaValue);
+  return `Order ${orderId} is ${status}. Latest ETA: ${eta}.`;
+}
 
 const CHAT_INSTRUCTIONS = `You are Tabby's Instamart developer assistant with the complete Instamart MCP catalogue.
 Use tools for addresses, products, carts, coupons, payments, and orders. Never invent identifiers, prices, availability, totals, addresses, or order status.
