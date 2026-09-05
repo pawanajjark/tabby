@@ -54,6 +54,24 @@ test('creating a home and joining it is one atomic membership transaction', () =
   assert.match(block, /ctx\.db\.member\.insert/);
 });
 
+test('shared household reducers write to the sender current home', () => {
+  for (const reducer of [
+    'upsert_flat_rule',
+    'upsert_shared_memory',
+    'add_pantry_item',
+    'record_expense',
+  ]) {
+    const block = exportedBlock(reducer);
+    assert.match(block, /senderFlatId\(ctx\)/, `${reducer} must use the sender membership`);
+    assert.doesNotMatch(block, /ensureDefaultResidenceAndFlat\(ctx\)/, `${reducer} must not use the seeded default home`);
+  }
+});
+
+test('pantry updates and expense splits stay inside the sender current home', () => {
+  assert.match(exportedBlock('add_pantry_item'), /row\.flat_id === flatId/);
+  assert.match(exportedBlock('record_expense'), /member\.flat_id === flatId/);
+});
+
 test('conversation message retries are idempotent across tabs', () => {
   const block = exportedBlock('append_conversation_message_once');
   assert.match(block, /message_key/);

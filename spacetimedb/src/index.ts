@@ -148,6 +148,24 @@ const aiVerification = table(
   },
 );
 
+const shoppingAgentState = table(
+  { name: 'shopping_agent_state' },
+  {
+    session_id: t.string().primaryKey(),
+    owner: t.identity().index('btree'),
+    flat_id: t.u64().index('btree'),
+    phase: t.string(),
+    address_id: t.string(),
+    requested_items_json: t.string(),
+    selected_items_json: t.string(),
+    cart_json: t.string(),
+    payment_json: t.string(),
+    tool_context_json: t.string(),
+    pending_confirmation: t.bool(),
+    updated_at: t.timestamp(),
+  },
+);
+
 const spacetimedb = schema({
   residence,
   flat,
@@ -162,6 +180,7 @@ const spacetimedb = schema({
   sharedMemory,
   aiConfig,
   aiVerification,
+  shoppingAgentState,
 });
 
 export default spacetimedb;
@@ -193,6 +212,12 @@ export const my_ai_status = spacetimedb.view(
       ? { configured: true, verified: ctx.db.aiVerification.owner.find(ctx.sender) !== null, model: config.model }
       : undefined;
   },
+);
+
+export const my_shopping_agent_states = spacetimedb.view(
+  { name: 'my_shopping_agent_states', public: true },
+  t.array(shoppingAgentState.rowType),
+  ctx => [...ctx.db.shoppingAgentState.owner.filter(ctx.sender)],
 );
 
 function defaultMemberName(identityHex: string) {
@@ -363,8 +388,10 @@ export const create_residence = spacetimedb.reducer(
 export const update_residence_flat = spacetimedb.reducer(
   { residence_name: t.string(), address: t.string(), flat_name: t.string(), flat_number: t.string() },
   (ctx, args) => {
-    const { residenceId, flatId } = ensureDefaultResidenceAndFlat(ctx);
-    const currentRes = ctx.db.residence.id.find(residenceId);
+    const flatId = senderFlatId(ctx);
+    const currentFlat = ctx.db.flat.id.find(flatId);
+    if (!currentFlat) throw new SenderError('Selected home not found.');
+    const currentRes = ctx.db.residence.id.find(currentFlat.residence_id);
     if (currentRes) {
       ctx.db.residence.id.update({
         ...currentRes,
@@ -372,14 +399,11 @@ export const update_residence_flat = spacetimedb.reducer(
         address: args.address.trim() || currentRes.address,
       });
     }
-    const currentFlat = ctx.db.flat.id.find(flatId);
-    if (currentFlat) {
-      ctx.db.flat.id.update({
-        ...currentFlat,
-        name: args.flat_name.trim() || currentFlat.name,
-        flat_number: args.flat_number.trim() || currentFlat.flat_number,
-      });
-    }
+    ctx.db.flat.id.update({
+      ...currentFlat,
+      name: args.flat_name.trim() || currentFlat.name,
+      flat_number: args.flat_number.trim() || currentFlat.flat_number,
+    });
   },
 );
 
@@ -402,7 +426,7 @@ export const upsert_flat_rule = spacetimedb.reducer(
     description: t.string(),
   },
   (ctx, args) => {
-    const { flatId } = ensureDefaultResidenceAndFlat(ctx);
+    const flatId = senderFlatId(ctx);
     const title = args.title.trim();
     const description = args.description.trim();
     const ruleType = ['implicit', 'explicit'].includes(args.rule_type) ? args.rule_type : 'explicit';
@@ -411,6 +435,7 @@ export const upsert_flat_rule = spacetimedb.reducer(
     if (args.id > 0n) {
       const existing = ctx.db.flatRule.id.find(args.id);
       if (existing) {
+        if (existing.flat_id !== flatId) throw new SenderError('House rule not found in this home.');
         ctx.db.flatRule.id.update({
           ...existing,
           rule_type: ruleType,
@@ -436,9 +461,11 @@ export const upsert_flat_rule = spacetimedb.reducer(
 export const delete_flat_rule = spacetimedb.reducer(
   { id: t.u64() },
   (ctx, { id }) => {
-    if (ctx.db.flatRule.id.find(id)) {
-      ctx.db.flatRule.id.delete(id);
-    }
+    const flatId = senderFlatId(ctx);
+    const existing = ctx.db.flatRule.id.find(id);
+    if (!existing) return;
+    if (existing.flat_id !== flatId) throw new SenderError('House rule not found in this home.');
+    ctx.db.flatRule.id.delete(id);
   },
 );
 
@@ -564,11 +591,11 @@ export const upsert_shared_memory = spacetimedb.reducer(
     const key = args.memory_key.trim().slice(0, 80);
     const value = args.value.trim().slice(0, 500);
     if (!key || !value) throw new SenderError('Shared memory needs a key and value.');
-    const { flatId } = ensureDefaultResidenceAndFlat(ctx);
+    const flatId = senderFlatId(ctx);
     const subject = ctx.db.member.identity.find(ctx.sender);
     const subjectName = subject?.display_name || defaultMemberName(ctx.sender.toHexString());
     const existing = [...ctx.db.sharedMemory.subject_identity.filter(ctx.sender)]
-      .find(row => row.category === args.category && row.memory_key === key);
+      .find(row => row.flat_id === flatId && row.category === args.category && row.memory_key === key);
 
     if (existing) {
       ctx.db.sharedMemory.id.update({
@@ -600,8 +627,9 @@ export const add_pantry_item = spacetimedb.reducer(
   (ctx, { name, quantity, unit }) => {
     const cleanName = name.trim().toLowerCase();
     if (!cleanName || quantity === 0) throw new SenderError('Add an item and a non-zero quantity.');
-    const { flatId } = ensureDefaultResidenceAndFlat(ctx);
-    const existing = [...ctx.db.pantryItem.name.filter(cleanName)][0];
+    const flatId = senderFlatId(ctx);
+    const existing = [...ctx.db.pantryItem.name.filter(cleanName)]
+      .find(row => row.flat_id === flatId);
     if (existing) {
       ctx.db.pantryItem.id.update({
         ...existing,
@@ -628,8 +656,8 @@ export const record_expense = spacetimedb.reducer(
   (ctx, { title, amount_paise }) => {
     const cleanTitle = title.trim();
     if (!cleanTitle || amount_paise <= 0n) throw new SenderError('Add an expense name and an amount.');
-    const { flatId } = ensureDefaultResidenceAndFlat(ctx);
-    const members = [...ctx.db.member.iter()];
+    const flatId = senderFlatId(ctx);
+    const members = [...ctx.db.member.iter()].filter(member => member.flat_id === flatId);
     if (members.length === 0) throw new SenderError('At least one roommate must join Tabby first.');
     const insertedExpense = ctx.db.expense.insert({
       id: 0n,
