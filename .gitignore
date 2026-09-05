@@ -4,3 +4,6 @@ spacetimedb/dist/
 .agents/
 .claude/
 skills-lock.json
+.env
+.env.local
+.env.*.local

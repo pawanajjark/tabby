@@ -4,7 +4,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 
 export class AIProvider {
   private static apiKey = localStorage.getItem('tabby_openai_api_key') || import.meta.env.VITE_OPENAI_API_KEY || '';
-  private static modelName = localStorage.getItem('tabby_openai_model') || import.meta.env.VITE_OPENAI_MODEL || 'gpt-4o-mini';
+  private static modelName = localStorage.getItem('tabby_openai_model') || import.meta.env.VITE_OPENAI_MODEL || 'gpt-5.6-sol';
 
   static setConfig(apiKey: string, modelName?: string) {
     this.apiKey = apiKey.trim();
