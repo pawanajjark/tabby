@@ -86,6 +86,7 @@ import { sharedActionAvailability } from './features/household/availability.ts';
 import { AgentShopping } from './services/agentShopping';
 import { AgentCooking, type Recipe, type RecipeIngredient } from './services/agentCooking';
 import { AgentInstamart, type InstamartCartPreparation, type InstamartShoppingState } from './services/agentInstamart';
+import { purchasedPantryItems } from './services/instamartPantry';
 import { AgentBilling, type SplitResult } from './services/agentBilling';
 import { AIProvider } from './services/aiProvider';
 import { AuthManager, type AuthUser } from './services/authManager';
@@ -2180,15 +2181,32 @@ function bindInstamartConfirmation(host: HTMLElement | null): void {
       currentInstamartCarts.delete(sessionId);
       const data = (result.order.data && typeof result.order.data === 'object' ? result.order.data : result.order) as Record<string, unknown>;
       const orderId = String(data.orderId || 'created');
+      let pantryUpdated = false;
+      let pantryError = '';
+      try {
+        if (!result.state) throw new Error('The confirmed shopping state was not returned.');
+        await persistShoppingState(result.state);
+        if (!prepared) throw new Error('The purchased product details are no longer available.');
+        const purchased = purchasedPantryItems(prepared.matches);
+        await connection.reducers.confirmShoppingOrderToPantry({
+          sessionId,
+          orderId,
+          itemNames: purchased.map(item => item.name),
+          itemQuantities: purchased.map(item => item.quantity),
+          itemUnits: purchased.map(item => item.unit),
+        });
+        pantryUpdated = true;
+      } catch (cause) {
+        pantryError = cause instanceof Error ? cause.message : String(cause);
+        console.warn('Order placed, but purchased items could not be synchronized to the pantry:', cause);
+      }
       const review = host?.querySelector<HTMLElement>('[data-instamart-review]');
-      if (review) review.innerHTML = `<strong>Instamart order placed</strong><p>Order ${escapeHtml(orderId)} is confirmed in the test environment. No real purchase was made.</p>`;
+      if (review) review.innerHTML = `<strong>Instamart order placed</strong><p>Order ${escapeHtml(orderId)} is confirmed in the test environment. ${pantryUpdated ? `${prepared?.matches.length || 0} purchased product${prepared?.matches.length === 1 ? '' : 's'} added to your pantry.` : `Pantry update needs attention: ${escapeHtml(pantryError)}`}</p>`;
       const checkoutButton = host?.querySelector<HTMLButtonElement>('[data-shop-list], [data-cook-checkout]');
       if (checkoutButton) checkoutButton.textContent = 'Groceries ordered';
-      if (result.state) {
-        try { await persistShoppingState(result.state); }
-        catch (cause) { console.warn('Order placed, but its final state could not be synchronized:', cause); }
-      }
-      showToast('Instamart order placed successfully. You can ask Tabby for its status and ETA.');
+      showToast(pantryUpdated
+        ? 'Order placed and purchased items added to your pantry.'
+        : 'Order placed, but the pantry update needs attention.', pantryUpdated ? 'success' : 'error');
     } catch (cause) {
       button.disabled = false;
       button.textContent = 'Confirm and place order';
@@ -2379,9 +2397,13 @@ function attachDatabaseListeners(conn: DbConnection) {
   }));
   conn.db.member.onUpdate(ifCurrent(renderAll));
   conn.db.member.onDelete(ifCurrent(renderAll));
-  conn.db.pantryItem.onInsert(ifCurrent(renderAll));
-  conn.db.pantryItem.onUpdate(ifCurrent(renderAll));
-  conn.db.pantryItem.onDelete(ifCurrent(renderAll));
+  const syncPantrySurfaces = ifCurrent(() => {
+    renderContextPanel();
+    renderPantryRoute();
+  });
+  conn.db.pantryItem.onInsert(syncPantrySurfaces);
+  conn.db.pantryItem.onUpdate(syncPantrySurfaces);
+  conn.db.pantryItem.onDelete(syncPantrySurfaces);
   conn.db.sharedMemory.onInsert(ifCurrent(renderAll));
   conn.db.sharedMemory.onUpdate(ifCurrent(renderAll));
   conn.db.expense.onInsert(ifCurrent(renderAll));

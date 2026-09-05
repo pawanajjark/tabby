@@ -38,6 +38,7 @@ import AddPantryItemReducer from "./add_pantry_item_reducer";
 import AppendConversationMessageReducer from "./append_conversation_message_reducer";
 import AppendConversationMessageOnceReducer from "./append_conversation_message_once_reducer";
 import ClearAllDataReducer from "./clear_all_data_reducer";
+import ConfirmShoppingOrderToPantryReducer from "./confirm_shopping_order_to_pantry_reducer";
 import CreateAndJoinFlatReducer from "./create_and_join_flat_reducer";
 import CreateConversationReducer from "./create_conversation_reducer";
 import CreateHomeAndJoinReducer from "./create_home_and_join_reducer";
@@ -272,6 +273,7 @@ const reducersSchema = __reducers(
   __reducerSchema("append_conversation_message", AppendConversationMessageReducer),
   __reducerSchema("append_conversation_message_once", AppendConversationMessageOnceReducer),
   __reducerSchema("clear_all_data", ClearAllDataReducer),
+  __reducerSchema("confirm_shopping_order_to_pantry", ConfirmShoppingOrderToPantryReducer),
   __reducerSchema("create_and_join_flat", CreateAndJoinFlatReducer),
   __reducerSchema("create_conversation", CreateConversationReducer),
   __reducerSchema("create_home_and_join", CreateHomeAndJoinReducer),
