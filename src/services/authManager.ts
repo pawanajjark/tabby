@@ -31,10 +31,11 @@ export class AuthManager {
         }
       }
     } catch {}
-    // Default logged in demo user is Sam for smooth demo flow
-    const defaultUser = this.getDemoUser();
-    this.saveUser(defaultUser);
-    return defaultUser;
+    return {
+      name: '',
+      phone: '',
+      isLoggedIn: false,
+    };
   }
 
   static saveUser(user: AuthUser) {
@@ -45,36 +46,24 @@ export class AuthManager {
     }
   }
 
-  static sendOtp(phone: string): { success: boolean; dummyOtp: string; message: string } {
+  static signIn(phone: string, name: string): { success: boolean; user?: AuthUser; message: string } {
+    const cleanName = name.trim();
     const cleanPhone = phone.trim();
+    if (!cleanName) return { success: false, message: 'Please enter your name.' };
     if (!cleanPhone || cleanPhone.length < 4) {
-      return { success: false, dummyOtp: '', message: 'Please enter a valid phone number.' };
-    }
-    return {
-      success: true,
-      dummyOtp: '1111',
-      message: 'OTP sent! Use demo code 1111 to log in.',
-    };
-  }
-
-  static verifyOtp(phone: string, otp: string, name: string): { success: boolean; user?: AuthUser; message: string } {
-    const cleanOtp = otp.trim();
-    if (cleanOtp !== '1111') {
-      return { success: false, message: 'Invalid OTP. Please enter dummy OTP: 1111' };
+      return { success: false, message: 'Please enter a valid phone number.' };
     }
 
-    const cleanName = name.trim() || 'Sam';
     const currentUser = this.getCurrentUser();
     const user: AuthUser = {
       name: cleanName,
-      phone: phone.trim() || '+91 98765 43210',
+      phone: cleanPhone,
       isLoggedIn: true,
-      flatId: currentUser.flatId || '1',
-      residenceId: currentUser.residenceId || '1',
+      flatId: currentUser.flatId,
+      residenceId: currentUser.residenceId,
     };
-
     this.saveUser(user);
-    return { success: true, user, message: `Welcome ${cleanName}! Logged in successfully.` };
+    return { success: true, user, message: `Welcome ${cleanName}!` };
   }
 
   static logout() {

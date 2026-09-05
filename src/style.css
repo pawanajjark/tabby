@@ -1088,20 +1088,7 @@ dialog::backdrop { background: rgba(44, 41, 37, 0.44); }
   border-radius: 8px;
 }
 
-.quick-demo-btn::after { content: 'Use Sam demo details (code 1111)'; font-size: 0.74rem; }
-
-.otp-hint-banner {
-  padding: 9px 11px;
-  color: var(--success);
-  font-size: 0;
-  background: rgba(61, 107, 74, 0.07);
-  border: 1px solid rgba(61, 107, 74, 0.22);
-  border-radius: 7px;
-}
-
-.otp-hint-banner::before { content: 'Demo verification code: '; font-size: 0.72rem; }
-.otp-hint-banner strong { font-size: 0.72rem; }
-.otp-input-field { font-size: 1.08rem !important; font-variant-numeric: tabular-nums; font-weight: 650; letter-spacing: 0.32em; text-align: center; }
+.quick-demo-btn::after { content: 'Use Sam demo details'; font-size: 0.74rem; }
 
 .ai-status-badge {
   display: inline-flex;
@@ -1407,7 +1394,7 @@ dialog::backdrop { background: rgba(44, 41, 37, 0.44); }
 
   .mobile-context-actions {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 7px;
     padding-top: 14px;
   }

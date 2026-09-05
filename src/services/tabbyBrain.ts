@@ -1,4 +1,4 @@
-import { AIProvider } from './aiProvider';
+import { AIProvider } from './aiProvider.ts';
 
 export type AgentIntent = 'grocery' | 'chef' | 'billing' | 'context' | 'general';
 export type MemoryCategory = 'diet' | 'allergy' | 'food_preference' | 'routine' | 'household_note';
@@ -62,6 +62,18 @@ function makeFact(category: MemoryCategory, key: string, value: string, visibili
 }
 
 export class TabbyBrain {
+  static answerPersonalQuestion(question: string, displayName: string): string | null {
+    const asksForName = /\b(?:what(?:'s| is) my name|what my name is|do you know my name|who am i|what do you call me)\b/i.test(question);
+    if (!asksForName) return null;
+
+    const cleanName = displayName.trim();
+    const identityDerived = /^(?:housemate\s+)?(?:0x)?c200[a-f0-9]*$/i.test(cleanName);
+    if (!cleanName || identityDerived) {
+      return 'Finish onboarding first so I know what to call you.';
+    }
+    return `Your name is ${cleanName}.`;
+  }
+
   static createSharedFact(category: MemoryCategory, key: string, value: string): MemoryFact {
     return makeFact(category, key, value, 'shared');
   }

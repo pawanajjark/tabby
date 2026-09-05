@@ -122,6 +122,8 @@ app.innerHTML = `
       </div>
       <div class="mobile-context-actions">
         <button id="mobile-new-conversation">New conversation</button>
+        <button id="mobile-onboard">Switch home</button>
+        <button id="mobile-login">Account</button>
         <button id="mobile-profile">Your profile</button>
         <button id="mobile-ai-settings">Settings</button>
       </div>
@@ -169,17 +171,13 @@ app.innerHTML = `
       </div>
       <p class="returning-user-copy">Returning to Tabby? Sign in below.</p>
       <div class="onboarding-section-heading"><span>PRIVATE SETUP</span><strong>Your profile</strong></div>
-      <button type="button" id="fill-sam-demo" class="quick-demo-btn">Use Sam demo details (code 1111)</button>
+      <button type="button" id="fill-sam-demo" class="quick-demo-btn">Use Sam demo details</button>
       <label>Name<input id="login-name" value="Sam" placeholder="Your name" required /></label>
       <label>Phone number<input id="login-phone" value="+91 98765 43210" placeholder="+91 98765 43210" required /></label>
-      <div id="otp-group" style="display: grid; gap: 8px;">
-        <div class="otp-hint-banner">Demo verification code: <strong>1111</strong></div>
-        <label>Verification code<input id="login-otp" class="otp-input-field" placeholder="1111" value="1111" maxlength="4" autocomplete="one-time-code" required /></label>
-      </div>
       <p class="privacy-note">Your conversations stay private. Only items you explicitly save appear in the Home shelf.</p>
       <div class="dialog-actions">
         <button type="button" class="secondary-button" data-close-dialog="login-dialog">Cancel</button>
-        <button type="submit" class="primary-button" id="login-submit-btn">Verify and continue</button>
+        <button type="submit" class="primary-button" id="login-submit-btn">Continue</button>
       </div>
     </form>
   </dialog>
@@ -612,9 +610,17 @@ function getRoommates(): RoommateProfile[] {
 }
 
 function currentName() {
+  if (isConnected && currentIdentity) {
+    const member = [...connection.db.member.iter()]
+      .find(row => row.identity.toHexString() === currentIdentity);
+    const databaseName = member?.displayName.trim() || '';
+    if (databaseName && !/^(?:housemate\s+)?(?:0x)?c200[a-f0-9]*$/i.test(databaseName)) {
+      return databaseName;
+    }
+  }
   const currentUser = AuthManager.getCurrentUser();
-  if (currentUser && currentUser.name) return currentUser.name;
-  return getRoommates().find(roommate => roommate.identityHex === currentIdentity)?.displayName || 'Sam';
+  if (currentUser.isLoggedIn && currentUser.name.trim()) return currentUser.name.trim();
+  return '';
 }
 
 interface LocalPantryItem {
@@ -976,6 +982,13 @@ function renderSplit(split: SplitResult) {
 }
 
 async function routeMessage(text: string) {
+  const personalAnswer = TabbyBrain.answerPersonalQuestion(text, currentName());
+  if (personalAnswer) {
+    setRoute('general', false);
+    addMessage({ role: 'assistant', agent: 'general', text: personalAnswer });
+    return;
+  }
+
   setRoute('general', true);
   const analysis = await TabbyBrain.analyze(text, conversation, getSharedContext());
   TabbyBrain.savePrivateFacts(currentIdentity || 'local', analysis.privateFacts);
@@ -1034,9 +1047,10 @@ async function routeMessage(text: string) {
       const householdContext = getSharedContext().slice(0, 12)
         .map(memory => `${memory.subjectName}: ${memory.value}`)
         .join('; ');
+      const verifiedName = currentName();
       const generated = await AIProvider.generateText(
         `Recent conversation:\n${recentConversation}\n\nCurrent request:\n${text}`,
-        `You are Tabby, a concise household coordination assistant. Answer practical home questions. If an image is provided, analyze and describe its relevant contents. Do not claim an action happened unless it was performed. Shared household context: ${householdContext || 'No shared memories yet.'}`,
+        `You are Tabby, a concise household coordination assistant. Answer practical home questions. If an image is provided, analyze and describe its relevant contents. Do not claim an action happened unless it was performed. The current member's verified display name is ${verifiedName || 'not set because onboarding is incomplete'}. Never present a database identity or hexadecimal identifier as a person's name. Shared household context: ${householdContext || 'No shared memories yet.'}`,
         attachedReceipt,
       );
       addMessage({
@@ -1188,6 +1202,25 @@ let connectionGeneration = 0;
 let reconnectAttempt = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let connectionAttemptInFlight = false;
+let firstRunPromptShown = false;
+
+function maybeShowFirstRunOnboarding(hasMembership: boolean) {
+  if (hasMembership || firstRunPromptShown) return;
+  firstRunPromptShown = true;
+  const user = AuthManager.getCurrentUser();
+  if (user.isLoggedIn && user.name.trim()) {
+    showOnboardingDialog();
+  } else {
+    showLoginDialog();
+  }
+}
+
+function showFreshSessionOnboarding() {
+  const user = AuthManager.getCurrentUser();
+  if (user.isLoggedIn || firstRunPromptShown) return;
+  firstRunPromptShown = true;
+  showLoginDialog();
+}
 
 function attachDatabaseListeners(conn: DbConnection) {
   const ifCurrent = (callback: () => void) => () => {
@@ -1316,6 +1349,7 @@ function connectToDatabase() {
               console.warn('Syncing displayName to SpacetimeDB:', error);
             }
           }
+          maybeShowFirstRunOnboarding(isJoined);
           renderAll();
         })
         .onError(errorContext => {
@@ -1732,21 +1766,17 @@ function showLoginDialog() {
   const user = AuthManager.getCurrentUser();
   const nameInput = document.querySelector<HTMLInputElement>('#login-name')!;
   const phoneInput = document.querySelector<HTMLInputElement>('#login-phone')!;
-  const otpInput = document.querySelector<HTMLInputElement>('#login-otp')!;
   if (nameInput) nameInput.value = user.name || 'Sam';
   if (phoneInput) phoneInput.value = user.phone || '+91 98765 43210';
-  if (otpInput) otpInput.value = '1111';
   openDialog('login-dialog');
 }
 
 function fillSamDemo() {
   const nameInput = document.querySelector<HTMLInputElement>('#login-name')!;
   const phoneInput = document.querySelector<HTMLInputElement>('#login-phone')!;
-  const otpInput = document.querySelector<HTMLInputElement>('#login-otp')!;
   if (nameInput) nameInput.value = 'Sam';
   if (phoneInput) phoneInput.value = '+91 98765 43210';
-  if (otpInput) otpInput.value = '1111';
-  showToast('Sam demo details are ready. Verification code: 1111.');
+  showToast('Sam demo details are ready.');
 }
 
 document.querySelector('#open-login-dialog')?.addEventListener('click', () => {
@@ -1754,6 +1784,10 @@ document.querySelector('#open-login-dialog')?.addEventListener('click', () => {
   showLoginDialog();
 });
 document.querySelector('#header-user-badge')?.addEventListener('click', showLoginDialog);
+document.querySelector('#mobile-login')?.addEventListener('click', () => {
+  setContextOpen(false);
+  showLoginDialog();
+});
 document.querySelector('#fill-sam-demo')?.addEventListener('click', fillSamDemo);
 document.querySelector('.create-home-action')?.addEventListener('click', () => {
   document.querySelector<HTMLDialogElement>('#login-dialog')?.close();
@@ -1768,18 +1802,17 @@ document.querySelector<HTMLFormElement>('#login-form')?.addEventListener('submit
   event.preventDefault();
   const nameInput = document.querySelector<HTMLInputElement>('#login-name')!;
   const phoneInput = document.querySelector<HTMLInputElement>('#login-phone')!;
-  const otpInput = document.querySelector<HTMLInputElement>('#login-otp')!;
 
   const name = nameInput.value.trim();
   const phone = phoneInput.value.trim();
-  const otp = otpInput.value.trim();
 
-  const verification = AuthManager.verifyOtp(phone, otp, name);
-  if (!verification.success) {
-    return showToast(verification.message, 'error');
+  const signIn = AuthManager.signIn(phone, name);
+  if (!signIn.success) {
+    return showToast(signIn.message, 'error');
   }
 
-  if (currentIdentityHasMembership()) {
+  const hasMembership = currentIdentityHasMembership();
+  if (hasMembership) {
     try {
       connection.reducers.setDisplayName({ displayName: name });
     } catch (e) {
@@ -1789,7 +1822,8 @@ document.querySelector<HTMLFormElement>('#login-form')?.addEventListener('submit
 
   document.querySelector<HTMLDialogElement>('#login-dialog')?.close();
   renderAll();
-  showToast(verification.message, 'success');
+  showToast(signIn.message, 'success');
+  if (!hasMembership) showOnboardingDialog();
 });
 
 // Flat Onboarding Modal Logic
@@ -1857,6 +1891,10 @@ document.querySelector('#open-onboard-dialog')?.addEventListener('click', () => 
   showOnboardingDialog();
 });
 document.querySelector('#header-flat-badge')?.addEventListener('click', () => showOnboardingDialog());
+document.querySelector('#mobile-onboard')?.addEventListener('click', () => {
+  setContextOpen(false);
+  showOnboardingDialog();
+});
 document.querySelector('#onboard-residence')?.addEventListener('change', updateOnboardFlatsDropdown);
 document.querySelector('#onboard-flat')?.addEventListener('change', () => {
   const flatSelect = document.querySelector<HTMLSelectElement>('#onboard-flat')!;
@@ -1875,17 +1913,14 @@ document.querySelector<HTMLFormElement>('#onboard-form')?.addEventListener('subm
   const displayName = nameInput.value.trim() || 'Sam';
   let resId = resSelect.value;
   let flatId = flatSelect.value;
+  let newResidence: { name: string; address: string } | undefined;
 
   if (resId === '__new__') {
     const resName = (document.querySelector<HTMLInputElement>('#new-res-name')?.value || '').trim() || 'New Residency';
     const resAddress = (document.querySelector<HTMLInputElement>('#new-res-address')?.value || '').trim() || 'Bengaluru';
     const newRes = ResidenceManager.addResidence(resName, resAddress);
     resId = newRes.id;
-    if (isConnected) {
-      try {
-        (connection.reducers as any).create_residence?.({ name: resName, address: resAddress });
-      } catch (e) {}
-    }
+    newResidence = { name: resName, address: resAddress };
   }
 
   if (flatId === '__new__') {
@@ -1895,20 +1930,30 @@ document.querySelector<HTMLFormElement>('#onboard-form')?.addEventListener('subm
     flatId = newFlat.id;
     if (isConnected) {
       try {
-        (connection.reducers as any).create_and_join_flat?.({
-          residence_id: BigInt(resId.match(/^\d+$/) ? resId : '1'),
-          flat_name: flatName,
-          flat_number: flatNum,
-          display_name: displayName,
-        });
+        if (newResidence) {
+          connection.reducers.createHomeAndJoin({
+            residenceName: newResidence.name,
+            address: newResidence.address,
+            flatName,
+            flatNumber: flatNum,
+            displayName,
+          });
+        } else {
+          connection.reducers.createAndJoinFlat({
+            residenceId: BigInt(resId.match(/^\d+$/) ? resId : '1'),
+            flatName,
+            flatNumber: flatNum,
+            displayName,
+          });
+        }
       } catch (e) {}
     }
   } else {
     if (isConnected) {
       try {
-        (connection.reducers as any).join_flat?.({
-          flat_id: BigInt(flatId.match(/^\d+$/) ? flatId : '1'),
-          display_name: displayName,
+        connection.reducers.joinFlat({
+          flatId: BigInt(flatId.match(/^\d+$/) ? flatId : '1'),
+          displayName,
         });
       } catch (e) {}
     }
@@ -1916,8 +1961,13 @@ document.querySelector<HTMLFormElement>('#onboard-form')?.addEventListener('subm
 
   // Update AuthManager and local active flat
   const currentUser = AuthManager.getCurrentUser();
-  currentUser.name = displayName;
-  AuthManager.saveUser(currentUser);
+  AuthManager.saveUser({
+    ...currentUser,
+    name: displayName,
+    isLoggedIn: true,
+    residenceId: resId,
+    flatId,
+  });
 
   const activeSelection = ResidenceManager.onboardMember(resId, flatId, displayName);
   document.querySelector<HTMLDialogElement>('#onboard-dialog')?.close();
@@ -1928,5 +1978,6 @@ document.querySelector<HTMLFormElement>('#onboard-form')?.addEventListener('subm
 
 renderConversation();
 setContextOpen(false);
+showFreshSessionOnboarding();
 connectToDatabase();
 syncAiStatus();

@@ -20,8 +20,9 @@ function sanitizeModel(model?: string): string {
   return clean;
 }
 
-const envKey = (import.meta.env.VITE_OPENAI_API_KEY as string | undefined)?.trim() || '';
-const envModel = (import.meta.env.VITE_OPENAI_MODEL as string | undefined)?.trim() || 'gpt-5.6-sol';
+const viteEnv = (import.meta as ImportMeta & { env?: ImportMetaEnv }).env;
+const envKey = (viteEnv?.VITE_OPENAI_API_KEY as string | undefined)?.trim() || '';
+const envModel = (viteEnv?.VITE_OPENAI_MODEL as string | undefined)?.trim() || 'gpt-5.6-sol';
 const initialKey = envKey || localStorage.getItem('tabby_openai_api_key')?.trim() || '';
 const initialModel = envModel || localStorage.getItem('tabby_openai_model')?.trim() || 'gpt-5.6-sol';
 
