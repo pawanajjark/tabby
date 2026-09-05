@@ -1,5 +1,6 @@
 import './style.css';
 import { DbConnection, tables } from './module_bindings';
+import { Timestamp } from 'spacetimedb';
 import { AppStore, type AppRoute } from './app/store';
 import { installRouteNavigation, reflectRoute, routeNavigation } from './app/routeShell';
 import { createHouseholdGateway, householdSubscriptionTables } from './data/householdGateway';
@@ -41,6 +42,8 @@ import {
   reminderViews,
   renderCookingConfirmation,
   renderBillReview,
+  projectExpenseBalances,
+  renderExpenseBalances,
   renderHomeShelfSummary,
   renderPantryRoute as renderRichPantryRoute,
   renderReminderShelf,
@@ -210,6 +213,12 @@ app.innerHTML = `
       </header>
       <div id="pantry-route-content" class="pantry-route-content" aria-live="polite">
         <div class="skeleton-list" aria-label="Loading pantry"><span></span><span></span><span></span></div>
+      </div>
+    </section>
+
+    <section class="route-page expenses-page" data-route-view="expenses" hidden>
+      <div id="expenses-route-content" class="expenses-route-content" aria-live="polite">
+        <div class="skeleton-list route-skeleton" aria-label="Loading expenses"><span></span><span></span><span></span></div>
       </div>
     </section>
 
@@ -1410,6 +1419,66 @@ function renderPantryRoute() {
   stock?.addEventListener('change', updateFilters);
 }
 
+function renderExpensesRoute() {
+  const target = document.querySelector<HTMLElement>('#expenses-route-content');
+  if (!target) return;
+  if (!isDatabaseSynchronized) {
+    target.innerHTML = '<div class="skeleton-list route-skeleton" aria-label="Loading expenses"><span></span><span></span><span></span></div>';
+    return;
+  }
+
+  const members = householdGateway.members();
+  const currentMember = members.find(member => member.identity.toHexString() === currentIdentity);
+  if (!currentMember) {
+    target.innerHTML = '<div class="route-empty"><h2>Choose your shared home</h2><p>Expenses and balances appear after you join a synchronized home.</p><button type="button" data-route="conversations">Back to conversations</button></div>';
+    target.querySelector<HTMLButtonElement>('[data-route="conversations"]')?.addEventListener('click', () => navigateTo('conversations'));
+    return;
+  }
+
+  const projection = projectExpenseBalances({
+    currentIdentity: currentMember.identity,
+    members,
+    expenses: householdGateway.expenses(),
+    metadata: householdGateway.expenseMetadata().map(row => ({
+      expenseId: row.expenseId,
+      expenseDateMicros: row.expenseDate.microsSinceUnixEpoch,
+      recordedAtMicros: row.recordedAt.microsSinceUnixEpoch,
+      splitMethod: row.splitMethod,
+    })),
+    splits: householdGateway.expenseSplits(),
+    settlements: householdGateway.expenseSettlements().map(row => ({
+      id: row.id,
+      debtorIdentity: row.debtorIdentity,
+      creditorIdentity: row.creditorIdentity,
+      amountPaise: row.amountPaise,
+      settledAtMicros: row.settledAt.microsSinceUnixEpoch,
+    })),
+  });
+  const shared = currentSharedAvailability();
+  target.innerHTML = renderExpenseBalances(projection, { online: shared.available, currentIdentity });
+  target.querySelectorAll<HTMLButtonElement>('[data-route="conversations"]').forEach(button => {
+    button.addEventListener('click', () => navigateTo('conversations'));
+  });
+  target.querySelectorAll<HTMLButtonElement>('[data-settle-counterparty]').forEach(button => {
+    button.addEventListener('click', async () => {
+      const counterpartyHex = button.dataset.settleCounterparty || '';
+      const counterparty = members.find(member => member.identity.toHexString() === counterpartyHex);
+      if (!counterparty) return showToast('That household member is no longer available.', 'error');
+      button.disabled = true;
+      button.textContent = 'Settling';
+      const result = await commandCoordinator.execute(`expense:settle:${currentIdentity}:${counterpartyHex}`, () =>
+        householdGateway.settleExpensePair(counterparty.identity));
+      if (result.status === 'acknowledged') {
+        showToast(`Balance with ${counterparty.displayName} settled.`, 'success');
+      } else {
+        button.disabled = !shared.available;
+        button.textContent = 'Settle up';
+        showToast(result.status === 'rejected' ? result.error.message : 'Reconnect before settling this balance.', 'error');
+      }
+    });
+  });
+}
+
 async function publishSharedFacts(facts: MemoryFact[]): Promise<number> {
   if (!facts.length) return 0;
   if (!isConnected || !currentIdentity || navigator.onLine === false) {
@@ -1677,19 +1746,77 @@ async function waitForSubscribed<T>(read: () => T | undefined, message: string, 
   throw new Error(message);
 }
 
+function updateCurrentBillReviewMarkup() {
+  if (!currentBillDraft) return;
+  const rendered = renderBillReview(
+    currentBillDraft,
+    currentSharedAvailability().available,
+    currentBillPhase,
+    window.matchMedia('(max-width: 720px)').matches,
+  );
+  for (let index = conversation.length - 1; index >= 0; index -= 1) {
+    const message = conversation[index];
+    if (!message.contentHtml?.includes('data-bill-review')) continue;
+    const container = document.createElement('div');
+    container.innerHTML = message.contentHtml;
+    const review = container.querySelector<HTMLElement>('[data-bill-review]');
+    if (!review) continue;
+    review.outerHTML = rendered;
+    conversation[index] = { ...message, contentHtml: container.innerHTML };
+    return;
+  }
+}
+
 async function recordCurrentBill() {
   if (!currentBillDraft) return;
+  if (currentBillPhase.step === 'recorded') {
+    showToast('This bill is already recorded.');
+    return;
+  }
   currentBillPhase = startBillRecord(currentBillDraft, currentSharedAvailability().available);
+  updateCurrentBillReviewMarkup();
   renderConversation();
   if (currentBillPhase.step !== 'creating-review') return;
   try {
     const amountPaise = currentBillDraft.lines.reduce((total, line) => total + line.amountPaise, 0n);
-    await householdGateway.recordExpense({ title: currentBillDraft.title, amountPaise });
+    const shareTotals = new Map<string, bigint>();
+    for (const line of currentBillDraft.lines) {
+      for (const allocation of line.allocations) {
+        const identity = allocation.member.identity.toHexString();
+        const amount = allocation.exempt ? 0n : allocation.amountPaise;
+        shareTotals.set(identity, (shareTotals.get(identity) ?? 0n) + amount);
+      }
+    }
+    const synchronizedMembers = householdGateway.members();
+    const shares = [...shareTotals].map(([identity, shareAmountPaise]) => {
+      const member = synchronizedMembers.find(candidate => candidate.identity.toHexString() === identity);
+      if (!member) throw new Error('A person in this split is no longer in the active home.');
+      return { member, shareAmountPaise };
+    });
+    const payer = synchronizedMembers.find(member => member.identity.toHexString() === currentBillDraft!.payer.identity.toHexString());
+    if (!payer) throw new Error('Choose a payer who belongs to the active home.');
+    const amounts = shares.map(share => share.shareAmountPaise);
+    const lowestShare = amounts.reduce((lowest, amount) => amount < lowest ? amount : lowest, amounts[0] ?? 0n);
+    const highestShare = amounts.reduce((highest, amount) => amount > highest ? amount : highest, amounts[0] ?? 0n);
+    const splitMethod = amounts.length > 0 && highestShare - lowestShare <= 1n
+      ? 'equal'
+      : 'adjusted';
+    await householdGateway.recordExpenseV2({
+      title: currentBillDraft.title,
+      amountPaise,
+      paidBy: payer.identity,
+      expenseDate: new Timestamp(currentBillDraft.expenseDateMicros),
+      splitMethod,
+      memberIdentities: shares.map(share => share.member.identity),
+      shareAmountsPaise: amounts,
+    });
     currentBillPhase = billRecordingAcknowledged(0n);
+    updateCurrentBillReviewMarkup();
     renderConversation();
-    showToast('The bill was recorded using the original equal-split backend.');
+    showToast('Bill recorded. Expenses and household balances are now up to date.', 'success');
   } catch (cause) {
     currentBillPhase = billRecordRejected(currentBillPhase, cause instanceof Error ? cause.message : String(cause));
+    updateCurrentBillReviewMarkup();
     renderConversation();
   }
 }
@@ -1842,6 +1969,7 @@ function renderHeaderAndRailBadges() {
 function renderAll() {
   renderContextPanel();
   renderPantryRoute();
+  renderExpensesRoute();
   renderHeaderAndRailBadges();
   const offline = !isConnected || navigator.onLine === false;
   const shared = sharedActionAvailability(isConnected, navigator.onLine !== false, currentActiveHomeId());
@@ -1971,6 +2099,9 @@ function attachDatabaseListeners(conn: DbConnection) {
   conn.db.sharedMemory.onUpdate(ifCurrent(renderAll));
   conn.db.expense.onInsert(ifCurrent(renderAll));
   conn.db.expense.onUpdate(ifCurrent(renderAll));
+  conn.db.expenseMetadata.onInsert(ifCurrent(renderAll));
+  conn.db.expenseMetadata.onUpdate(ifCurrent(renderAll));
+  conn.db.expenseSettlement.onInsert(ifCurrent(renderAll));
   conn.db.expenseSplit.onInsert(ifCurrent(renderAll));
   conn.db.expenseSplit.onUpdate(ifCurrent(renderAll));
   conn.db.myAiStatus.onInsert(ifCurrent(syncAiStatus));
@@ -2514,13 +2645,15 @@ async function handleIdentityAction(action: string) {
     identityState = { ...identityState, route: identityState.route === 'welcome' ? 'profile' : 'join-home', request: 'idle' };
   } else if (action === 'save-profile') {
     identityState = await saveProfile(identityState, ports);
-    if (identityState.request === 'success') identityState = {
-      ...identityState,
-      route: requestedHomePath === 'create' ? 'create-home' : requestedHomePath === 'join' ? 'join-home' : 'home-access',
-      createHome: { ...identityState.createHome, displayName: identityState.profile.displayName },
-      request: 'idle',
-      message: undefined,
-    };
+    if (identityState.request === 'success') {
+      const nextRoute = requestedHomePath === 'create' ? 'create-home' : requestedHomePath === 'join' ? 'join-home' : 'home-access';
+      identityState = {
+        ...hydrateIdentityState(nextRoute),
+        createHome: { ...identityState.createHome, displayName: identityState.profile.displayName },
+        request: 'idle',
+        message: undefined,
+      };
+    }
   } else if (action === 'confirm-create-home') identityState = await createHome(identityState, ports);
   else if (action === 'edit-home-basics') {
     editingExistingHomeBasics = true;
@@ -3135,6 +3268,7 @@ function navigateTo(route: AppRoute) {
   if (route === 'home' && contextIsDrawer()) setContextOpen(true);
   if (route !== 'home' && drawerController.isOpen()) setContextOpen(false);
   if (route === 'pantry') renderPantryRoute();
+  if (route === 'expenses') renderExpensesRoute();
 }
 
 installRouteNavigation(navigateTo);

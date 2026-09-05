@@ -1,4 +1,4 @@
-export type AppRoute = 'conversations' | 'pantry' | 'home';
+export type AppRoute = 'conversations' | 'pantry' | 'expenses' | 'home';
 export type Connectivity = 'connecting' | 'online' | 'offline';
 
 export interface AppState {

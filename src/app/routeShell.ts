@@ -4,6 +4,7 @@ export function routeNavigation(className: string) {
   return `<nav class="${className}" aria-label="Primary navigation">
     <button type="button" data-route="conversations">Conversations</button>
     <button type="button" data-route="pantry">Pantry</button>
+    <button type="button" data-route="expenses">Expenses</button>
     <button type="button" data-route="home">Home shelf</button>
   </nav>`;
 }

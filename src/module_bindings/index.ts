@@ -45,8 +45,10 @@ import CreateResidenceReducer from "./create_residence_reducer";
 import DeleteFlatRuleReducer from "./delete_flat_rule_reducer";
 import JoinFlatReducer from "./join_flat_reducer";
 import RecordExpenseReducer from "./record_expense_reducer";
+import RecordExpenseV2Reducer from "./record_expense_v_2_reducer";
 import SetAiConfigReducer from "./set_ai_config_reducer";
 import SetDisplayNameReducer from "./set_display_name_reducer";
+import SettleExpensePairReducer from "./settle_expense_pair_reducer";
 import UpdateResidenceFlatReducer from "./update_residence_flat_reducer";
 import UpsertFlatRuleReducer from "./upsert_flat_rule_reducer";
 import UpsertSharedMemoryReducer from "./upsert_shared_memory_reducer";
@@ -56,6 +58,8 @@ import * as RunAiProcedure from "./run_ai_procedure";
 
 // Import all table schema definitions
 import ExpenseRow from "./expense_table";
+import ExpenseMetadataRow from "./expense_metadata_table";
+import ExpenseSettlementRow from "./expense_settlement_table";
 import ExpenseSplitRow from "./expense_split_table";
 import FlatRow from "./flat_table";
 import FlatRuleRow from "./flat_rule_table";
@@ -63,6 +67,7 @@ import MemberRow from "./member_table";
 import MyAiStatusRow from "./my_ai_status_table";
 import MyConversationMessagesRow from "./my_conversation_messages_table";
 import MyConversationsRow from "./my_conversations_table";
+import MyShoppingAgentStatesRow from "./my_shopping_agent_states_table";
 import PantryItemRow from "./pantry_item_table";
 import ResidenceRow from "./residence_table";
 import SharedMemoryRow from "./shared_memory_table";
@@ -85,6 +90,40 @@ const tablesSchema = __schema({
       { name: 'expense_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, ExpenseRow),
+  expenseMetadata: __table({
+    name: 'expense_metadata',
+    indexes: [
+      { accessor: 'expense_id', name: 'expense_metadata_expense_id_idx_btree', algorithm: 'btree', columns: [
+        'expenseId',
+      ] },
+      { accessor: 'flat_id', name: 'expense_metadata_flat_id_idx_btree', algorithm: 'btree', columns: [
+        'flatId',
+      ] },
+    ],
+    constraints: [
+      { name: 'expense_metadata_expense_id_key', constraint: 'unique', columns: ['expenseId'] },
+    ],
+  }, ExpenseMetadataRow),
+  expenseSettlement: __table({
+    name: 'expense_settlement',
+    indexes: [
+      { accessor: 'creditor_identity', name: 'expense_settlement_creditor_identity_idx_btree', algorithm: 'btree', columns: [
+        'creditorIdentity',
+      ] },
+      { accessor: 'debtor_identity', name: 'expense_settlement_debtor_identity_idx_btree', algorithm: 'btree', columns: [
+        'debtorIdentity',
+      ] },
+      { accessor: 'flat_id', name: 'expense_settlement_flat_id_idx_btree', algorithm: 'btree', columns: [
+        'flatId',
+      ] },
+      { accessor: 'id', name: 'expense_settlement_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'expense_settlement_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, ExpenseSettlementRow),
   expenseSplit: __table({
     name: 'expense_split',
     indexes: [
@@ -216,6 +255,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyConversationsRow),
+  myShoppingAgentStates: __table({
+    name: 'my_shopping_agent_states',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyShoppingAgentStatesRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
@@ -231,8 +277,10 @@ const reducersSchema = __reducers(
   __reducerSchema("delete_flat_rule", DeleteFlatRuleReducer),
   __reducerSchema("join_flat", JoinFlatReducer),
   __reducerSchema("record_expense", RecordExpenseReducer),
+  __reducerSchema("record_expense_v_2", RecordExpenseV2Reducer),
   __reducerSchema("set_ai_config", SetAiConfigReducer),
   __reducerSchema("set_display_name", SetDisplayNameReducer),
+  __reducerSchema("settle_expense_pair", SettleExpensePairReducer),
   __reducerSchema("update_residence_flat", UpdateResidenceFlatReducer),
   __reducerSchema("upsert_flat_rule", UpsertFlatRuleReducer),
   __reducerSchema("upsert_shared_memory", UpsertSharedMemoryReducer),
@@ -251,6 +299,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "my_conversation_messages": Omit<typeof tablesSchema.schemaType.tables["myConversationMessages"], "accessorName"> & { readonly accessorName: "my_conversation_messages" };
     /** @deprecated Use `myConversations` instead. This alias will be removed in the next major version. */
     readonly "my_conversations": Omit<typeof tablesSchema.schemaType.tables["myConversations"], "accessorName"> & { readonly accessorName: "my_conversations" };
+    /** @deprecated Use `myShoppingAgentStates` instead. This alias will be removed in the next major version. */
+    readonly "my_shopping_agent_states": Omit<typeof tablesSchema.schemaType.tables["myShoppingAgentStates"], "accessorName"> & { readonly accessorName: "my_shopping_agent_states" };
   };
 };
 
@@ -272,6 +322,7 @@ const tableAccessorAliases = {
   "my_ai_status": "myAiStatus",
   "my_conversation_messages": "myConversationMessages",
   "my_conversations": "myConversations",
+  "my_shopping_agent_states": "myShoppingAgentStates",
 } as const;
 
 function __withTableAccessorAliases<T extends object>(target: T, freeze = false): T {
@@ -289,7 +340,6 @@ function __withTableAccessorAliases<T extends object>(target: T, freeze = false)
   }
   return freeze ? Object.freeze(out) : out;
 }
-
 type __DbViewBase = __DbConnectionImpl<typeof REMOTE_MODULE>["db"];
 export type DbView = __DbViewBase & {
   /** @deprecated Use `myAiStatus` instead. This alias will be removed in the next major version. */
@@ -298,6 +348,8 @@ export type DbView = __DbViewBase & {
   readonly "my_conversation_messages": __DbViewBase["myConversationMessages"];
   /** @deprecated Use `myConversations` instead. This alias will be removed in the next major version. */
   readonly "my_conversations": __DbViewBase["myConversations"];
+  /** @deprecated Use `myShoppingAgentStates` instead. This alias will be removed in the next major version. */
+  readonly "my_shopping_agent_states": __DbViewBase["myShoppingAgentStates"];
 };
 
 type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;
@@ -308,6 +360,8 @@ export type Tables = __TablesBase & {
   readonly "my_conversation_messages": __TablesBase["myConversationMessages"];
   /** @deprecated Use `myConversations` instead. This alias will be removed in the next major version. */
   readonly "my_conversations": __TablesBase["myConversations"];
+  /** @deprecated Use `myShoppingAgentStates` instead. This alias will be removed in the next major version. */
+  readonly "my_shopping_agent_states": __TablesBase["myShoppingAgentStates"];
 };
 
 /** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */

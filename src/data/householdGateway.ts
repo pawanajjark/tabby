@@ -1,5 +1,6 @@
 import { tables, type DbConnection } from '../module_bindings/index.ts';
 import type { HouseholdAction } from '../features/household/index.ts';
+import type { Identity, Timestamp } from 'spacetimedb';
 
 export interface HomeScopedRow {
   flatId: bigint;
@@ -21,6 +22,8 @@ export const householdSubscriptionTables = {
     tables.flatRule,
     tables.pantryItem,
     tables.expense,
+    tables.expenseMetadata,
+    tables.expenseSettlement,
     tables.expenseSplit,
     tables.sharedMemory,
   ],
@@ -56,6 +59,8 @@ export function createHouseholdGateway(
     flatRules: () => scoped([...connection().db.flatRule.iter()]),
     sharedMemories: () => scoped([...connection().db.sharedMemory.iter()]),
     expenses: () => scoped([...connection().db.expense.iter()]),
+    expenseMetadata: () => scoped([...connection().db.expenseMetadata.iter()]),
+    expenseSettlements: () => scoped([...connection().db.expenseSettlement.iter()]),
     expenseSplits: () => {
       const expenseIds = new Set(scoped([...connection().db.expense.iter()]).map(row => row.id));
       return [...connection().db.expenseSplit.iter()].filter(row => expenseIds.has(row.expenseId));
@@ -81,6 +86,22 @@ export function createHouseholdGateway(
     recordExpense(input: { title: string; amountPaise: bigint }) {
       requireActiveHome();
       return connection().reducers.recordExpense(input);
+    },
+    recordExpenseV2(input: {
+      title: string;
+      amountPaise: bigint;
+      paidBy: Identity;
+      expenseDate: Timestamp;
+      splitMethod: string;
+      memberIdentities: Identity[];
+      shareAmountsPaise: bigint[];
+    }) {
+      requireActiveHome();
+      return connection().reducers.recordExpenseV2(input);
+    },
+    settleExpensePair(counterparty: Identity) {
+      requireActiveHome();
+      return connection().reducers.settleExpensePair({ counterparty });
     },
     appendConversationMessage(input: { conversationId: string; messageKey: string; role: string; agent: string; content: string }) {
       requireActiveHome();

@@ -2,6 +2,7 @@ export * from './actions.ts';
 export * from './availability.ts';
 export * from './billing.ts';
 export * from './cooking.ts';
+export * from './expenses.ts';
 export * from './pantry.ts';
 export * from './reminders.ts';
 export * from './shelf.ts';

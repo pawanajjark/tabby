@@ -68,6 +68,32 @@ const expenseSplit = table(
   },
 );
 
+const expenseMetadata = table(
+  { name: 'expense_metadata', public: true },
+  {
+    expense_id: t.u64().primaryKey(),
+    flat_id: t.u64().index('btree'),
+    expense_date: t.timestamp(),
+    recorded_at: t.timestamp(),
+    split_method: t.string(),
+    recorded_by: t.identity(),
+  },
+);
+
+const expenseSettlement = table(
+  { name: 'expense_settlement', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    flat_id: t.u64().index('btree'),
+    debtor_identity: t.identity().index('btree'),
+    creditor_identity: t.identity().index('btree'),
+    amount_paise: t.i64(),
+    settled_by: t.identity(),
+    settled_at: t.timestamp(),
+    method: t.string(),
+  },
+);
+
 const flatRule = table(
   { name: 'flat_rule', public: true },
   {
@@ -173,6 +199,8 @@ const spacetimedb = schema({
   pantryItem,
   expense,
   expenseSplit,
+  expenseMetadata,
+  expenseSettlement,
   flatRule,
   conversation,
   conversationMessage,
@@ -668,6 +696,14 @@ export const record_expense = spacetimedb.reducer(
       category: 'general',
       breakdown_json: '',
     });
+    ctx.db.expenseMetadata.insert({
+      expense_id: insertedExpense.id,
+      flat_id: flatId,
+      expense_date: ctx.timestamp,
+      recorded_at: ctx.timestamp,
+      split_method: 'equal',
+      recorded_by: ctx.sender,
+    });
     const each = amount_paise / BigInt(members.length);
     const remainder = amount_paise % BigInt(members.length);
     members.forEach((roommate, index) => {
@@ -683,10 +719,127 @@ export const record_expense = spacetimedb.reducer(
   },
 );
 
+export const record_expense_v2 = spacetimedb.reducer(
+  {
+    title: t.string(),
+    amount_paise: t.i64(),
+    paid_by: t.identity(),
+    expense_date: t.timestamp(),
+    split_method: t.string(),
+    member_identities: t.array(t.identity()),
+    share_amounts_paise: t.array(t.i64()),
+  },
+  (ctx, args) => {
+    const title = args.title.trim();
+    const splitMethod = args.split_method.trim().toLowerCase();
+    if (!title || args.amount_paise <= 0n) throw new SenderError('Add an expense name and an amount.');
+    if (!['equal', 'adjusted'].includes(splitMethod)) throw new SenderError('Choose an equal or adjusted split.');
+    if (args.member_identities.length === 0 || args.member_identities.length !== args.share_amounts_paise.length) {
+      throw new SenderError('Every expense share needs one household member and one amount.');
+    }
+
+    const flatId = senderFlatId(ctx);
+    const payer = ctx.db.member.identity.find(args.paid_by);
+    if (!payer || payer.flat_id !== flatId) throw new SenderError('The payer must belong to your current home.');
+
+    const seenMembers = new Set<string>();
+    let shareTotal = 0n;
+    const shares = args.member_identities.map((memberIdentity, index) => {
+      const member = ctx.db.member.identity.find(memberIdentity);
+      const memberHex = memberIdentity.toHexString();
+      const amountPaise = args.share_amounts_paise[index];
+      if (!member || member.flat_id !== flatId) throw new SenderError('Every split member must belong to your current home.');
+      if (seenMembers.has(memberHex)) throw new SenderError('A household member can only appear once in an expense split.');
+      if (amountPaise < 0n) throw new SenderError('Expense shares cannot be negative.');
+      seenMembers.add(memberHex);
+      shareTotal += amountPaise;
+      return { memberIdentity, memberHex, amountPaise };
+    });
+    if (!seenMembers.has(args.paid_by.toHexString())) throw new SenderError('The payer must have a share in the expense.');
+    if (shareTotal !== args.amount_paise) throw new SenderError('Expense shares must add up to the total.');
+
+    const insertedExpense = ctx.db.expense.insert({
+      id: 0n,
+      flat_id: flatId,
+      title,
+      amount_paise: args.amount_paise,
+      paid_by: args.paid_by,
+      category: 'general',
+      breakdown_json: JSON.stringify(shares.map(share => ({ member: share.memberHex, amount_paise: share.amountPaise.toString() }))),
+    });
+    ctx.db.expenseMetadata.insert({
+      expense_id: insertedExpense.id,
+      flat_id: flatId,
+      expense_date: args.expense_date,
+      recorded_at: ctx.timestamp,
+      split_method: splitMethod,
+      recorded_by: ctx.sender,
+    });
+    for (const share of shares) {
+      ctx.db.expenseSplit.insert({
+        id: 0n,
+        expense_id: insertedExpense.id,
+        member_identity: share.memberIdentity,
+        amount_paise: share.amountPaise,
+        settled: share.memberHex === args.paid_by.toHexString(),
+        reason: splitMethod === 'equal' ? 'Equal split' : 'Adjusted split',
+      });
+    }
+  },
+);
+
+export const settle_expense_pair = spacetimedb.reducer(
+  { counterparty: t.identity() },
+  (ctx, { counterparty }) => {
+    const flatId = senderFlatId(ctx);
+    const senderHex = ctx.sender.toHexString();
+    const counterpartyHex = counterparty.toHexString();
+    if (senderHex === counterpartyHex) throw new SenderError('Choose another household member to settle with.');
+    const otherMember = ctx.db.member.identity.find(counterparty);
+    if (!otherMember || otherMember.flat_id !== flatId) throw new SenderError('That person is not in your current home.');
+
+    let senderOwes = 0n;
+    let counterpartyOwes = 0n;
+    const matchingSplits = [];
+    for (const split of ctx.db.expenseSplit.iter()) {
+      if (split.settled) continue;
+      const expenseRow = ctx.db.expense.id.find(split.expense_id);
+      if (!expenseRow || expenseRow.flat_id !== flatId) continue;
+      const debtorHex = split.member_identity.toHexString();
+      const creditorHex = expenseRow.paid_by.toHexString();
+      if (debtorHex === senderHex && creditorHex === counterpartyHex) {
+        senderOwes += split.amount_paise;
+        matchingSplits.push(split);
+      } else if (debtorHex === counterpartyHex && creditorHex === senderHex) {
+        counterpartyOwes += split.amount_paise;
+        matchingSplits.push(split);
+      }
+    }
+    if (matchingSplits.length === 0 || senderOwes === counterpartyOwes) {
+      throw new SenderError('There is no open balance to settle with that person.');
+    }
+
+    for (const split of matchingSplits) ctx.db.expenseSplit.id.update({ ...split, settled: true });
+    const senderIsDebtor = senderOwes > counterpartyOwes;
+    ctx.db.expenseSettlement.insert({
+      id: 0n,
+      flat_id: flatId,
+      debtor_identity: senderIsDebtor ? ctx.sender : counterparty,
+      creditor_identity: senderIsDebtor ? counterparty : ctx.sender,
+      amount_paise: senderIsDebtor ? senderOwes - counterpartyOwes : counterpartyOwes - senderOwes,
+      settled_by: ctx.sender,
+      settled_at: ctx.timestamp,
+      method: 'direct',
+    });
+  },
+);
+
 export const clear_all_data = spacetimedb.reducer(
   {},
   ctx => {
     for (const row of [...ctx.db.pantryItem.iter()]) ctx.db.pantryItem.id.delete(row.id);
+    for (const row of [...ctx.db.expenseSettlement.iter()]) ctx.db.expenseSettlement.id.delete(row.id);
+    for (const row of [...ctx.db.expenseMetadata.iter()]) ctx.db.expenseMetadata.expense_id.delete(row.expense_id);
     for (const row of [...ctx.db.expenseSplit.iter()]) ctx.db.expenseSplit.id.delete(row.id);
     for (const row of [...ctx.db.expense.iter()]) ctx.db.expense.id.delete(row.id);
     for (const row of [...ctx.db.sharedMemory.iter()]) ctx.db.sharedMemory.id.delete(row.id);

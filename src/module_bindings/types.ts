@@ -70,6 +70,28 @@ export const Expense = __t.object("Expense", {
 });
 export type Expense = __Infer<typeof Expense>;
 
+export const ExpenseMetadata = __t.object("ExpenseMetadata", {
+  expenseId: __t.u64(),
+  flatId: __t.u64(),
+  expenseDate: __t.timestamp(),
+  recordedAt: __t.timestamp(),
+  splitMethod: __t.string(),
+  recordedBy: __t.identity(),
+});
+export type ExpenseMetadata = __Infer<typeof ExpenseMetadata>;
+
+export const ExpenseSettlement = __t.object("ExpenseSettlement", {
+  id: __t.u64(),
+  flatId: __t.u64(),
+  debtorIdentity: __t.identity(),
+  creditorIdentity: __t.identity(),
+  amountPaise: __t.i64(),
+  settledBy: __t.identity(),
+  settledAt: __t.timestamp(),
+  method: __t.string(),
+});
+export type ExpenseSettlement = __Infer<typeof ExpenseSettlement>;
+
 export const ExpenseSplit = __t.object("ExpenseSplit", {
   id: __t.u64(),
   expenseId: __t.u64(),
@@ -116,6 +138,9 @@ export type MyConversationMessages = __Infer<typeof MyConversationMessages>;
 export const MyConversations = __t.object("MyConversations", {});
 export type MyConversations = __Infer<typeof MyConversations>;
 
+export const MyShoppingAgentStates = __t.object("MyShoppingAgentStates", {});
+export type MyShoppingAgentStates = __Infer<typeof MyShoppingAgentStates>;
+
 export const PantryItem = __t.object("PantryItem", {
   id: __t.u64(),
   flatId: __t.u64(),
@@ -146,4 +171,20 @@ export const SharedMemory = __t.object("SharedMemory", {
   updatedAt: __t.timestamp(),
 });
 export type SharedMemory = __Infer<typeof SharedMemory>;
+
+export const ShoppingAgentState = __t.object("ShoppingAgentState", {
+  sessionId: __t.string(),
+  owner: __t.identity(),
+  flatId: __t.u64(),
+  phase: __t.string(),
+  addressId: __t.string(),
+  requestedItemsJson: __t.string(),
+  selectedItemsJson: __t.string(),
+  cartJson: __t.string(),
+  paymentJson: __t.string(),
+  toolContextJson: __t.string(),
+  pendingConfirmation: __t.bool(),
+  updatedAt: __t.timestamp(),
+});
+export type ShoppingAgentState = __Infer<typeof ShoppingAgentState>;
 

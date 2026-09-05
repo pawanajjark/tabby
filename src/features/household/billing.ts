@@ -202,6 +202,7 @@ export function recordReviewedBillAction(reviewId: bigint): HouseholdAction {
 export function renderBillReview(draft: BillDraft, online: boolean, phase: BillRecordPhase, mobile = false): string {
   const totals = billTotals(draft);
   const control = billRecordControl(draft, online, phase);
+  const locked = phase.step === 'recorded';
   const payerOptions = new Map<string, string>();
   payerOptions.set(draft.payer.identity.toHexString(), draft.payer.displayName);
   for (const line of draft.lines) {
@@ -217,17 +218,17 @@ export function renderBillReview(draft: BillDraft, online: boolean, phase: BillR
     <header><h3>${escapeHouseholdHtml(line.label)}</h3><strong>${paiseLabel(line.amountPaise)}</strong></header>
     <div class="bill-line-allocations">${line.allocations.map(allocation => `<label class="bill-person ${allocation.exempt ? 'is-exempt' : ''}">
       <span>${escapeHouseholdHtml(allocation.member.displayName)}</span>
-      <input type="number" data-allocation-member="${escapeHouseholdHtml(allocation.member.identity.toHexString())}" value="${allocation.amountPaise}" ${allocation.exempt ? 'disabled' : ''} />
-      <input type="checkbox" data-allocation-exempt ${allocation.exempt ? 'checked' : ''} /> Exempt
+      <input type="number" data-allocation-member="${escapeHouseholdHtml(allocation.member.identity.toHexString())}" value="${allocation.amountPaise}" ${allocation.exempt || locked ? 'disabled' : ''} />
+      <input type="checkbox" data-allocation-exempt ${allocation.exempt ? 'checked' : ''} ${locked ? 'disabled' : ''} /> Exempt
     </label>`).join('')}</div>
   </article>`).join('');
   return `<section class="bill-review ${mobile ? 'bill-review-mobile' : 'bill-review-desktop'} ${online ? '' : 'is-offline'}" data-bill-review>
-    <header><p class="eyebrow">REVIEW BEFORE RECORDING</p><h2>${escapeHouseholdHtml(draft.title)}</h2><p>The original backend records the total as an equal split. Item allocations below are a preview only.</p></header>
+    <header><p class="eyebrow">${locked ? 'RECORDED' : 'REVIEW BEFORE RECORDING'}</p><h2>${escapeHouseholdHtml(draft.title)}</h2><p>${locked ? 'This expense is in the household ledger and its balances are live.' : 'Review the payer, date, and shares. Recording creates the household balance and expense history.'}</p></header>
     ${online ? '' : '<p class="bill-offline" role="status">Reconnect to edit shared allocations or record this bill.</p>'}
-    <div class="bill-fields"><label>Paid by<select data-bill-payer>${options}</select></label><label>Date<input type="date" data-bill-date value="${dateValue}" /></label></div>
+    <div class="bill-fields"><label>Paid by<select data-bill-payer ${locked ? 'disabled' : ''}>${options}</select></label><label>Date<input type="date" data-bill-date value="${dateValue}" ${locked ? 'disabled' : ''} /></label></div>
     <div class="bill-lines">${lines}</div>
     <footer><span>Allocated ${paiseLabel(totals.allocatedPaise)} of ${paiseLabel(totals.billPaise)}</span>
-      <button type="button" data-record-bill ${control.disabled ? 'disabled' : ''}>${phase.step === 'recorded' ? 'Recorded equally' : 'Record equal split'}</button>
+      <button type="button" data-record-bill ${control.disabled ? 'disabled' : ''}>${locked ? 'Recorded' : 'Record expense'}</button>
       <p class="bill-record-state">${escapeHouseholdHtml(control.reason)}</p>
     </footer>
   </section>`;
