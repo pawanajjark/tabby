@@ -2238,8 +2238,10 @@ function readIdentityDraft(): void {
     } };
   } else if (identityState.route === 'create-home') {
     identityState = { ...identityState, createHome: {
-      residenceName: text('residenceName'), address: text('address'), homeName: text('homeName'),
-      homeLabel: text('homeLabel'), displayName: text('homeDisplayName'),
+      ...identityState.createHome,
+      homeName: text('homeName'),
+      homeLabel: text('homeLabel'),
+      displayName: identityState.createHome.displayName || identityState.profile.displayName,
     } };
   } else if (identityState.route === 'bring-house-together') {
     identityState = { ...identityState, basics: {
@@ -2394,12 +2396,22 @@ function renderIdentityFlowUi() {
   mount.querySelectorAll<HTMLInputElement>('.identity-fields input').forEach(input => {
     input.addEventListener('input', () => {
       identityState = updateIdentityTextField(identityState, input.name, input.value);
-      if (identityState.route === 'create-home') {
+      if (identityState.route === 'profile') {
+        const action = mount.querySelector<HTMLButtonElement>('[data-identity-action="save-profile"]');
+        if (action) {
+          action.disabled = !identityState.profile.displayName.trim() || !identityState.profile.phone.trim();
+          action.setAttribute('aria-disabled', String(action.disabled));
+        }
+      } else if (identityState.route === 'create-home') {
         const action = mount.querySelector<HTMLButtonElement>('[data-identity-action="confirm-create-home"]');
         if (action) {
           action.disabled = !homePreview(identityState.createHome);
           action.setAttribute('aria-disabled', String(action.disabled));
         }
+        const previewName = mount.querySelector<HTMLElement>('[data-home-preview-name]');
+        const previewAddress = mount.querySelector<HTMLElement>('[data-home-preview-address]');
+        if (previewName) previewName.textContent = identityState.createHome.homeName || 'Your home';
+        if (previewAddress) previewAddress.textContent = identityState.createHome.homeLabel || 'Address can be added later';
       }
     });
   });
@@ -2441,17 +2453,23 @@ async function handleIdentityAction(action: string) {
     requestedHomePath = 'create';
     identityState = { ...identityState, route: identityState.route === 'welcome' ? 'profile' : 'create-home', request: 'idle' };
   } else if (action === 'join-home') {
-    requestedHomePath = null;
-    identityState = { ...identityState, route: identityState.route === 'welcome' ? 'profile' : 'home-access', request: 'idle' };
+    requestedHomePath = 'join';
+    identityState = { ...identityState, route: identityState.route === 'welcome' ? 'profile' : 'join-home', request: 'idle' };
   } else if (action === 'save-profile') {
     identityState = await saveProfile(identityState, ports);
-    if (identityState.request === 'success') identityState = { ...identityState, route: requestedHomePath === 'create' ? 'create-home' : 'home-access' };
+    if (identityState.request === 'success') identityState = {
+      ...identityState,
+      route: requestedHomePath === 'create' ? 'create-home' : requestedHomePath === 'join' ? 'join-home' : 'home-access',
+      createHome: { ...identityState.createHome, displayName: identityState.profile.displayName },
+      request: 'idle',
+      message: undefined,
+    };
   } else if (action === 'confirm-create-home') identityState = await createHome(identityState, ports);
   else if (action === 'lookup-invitation') {
     const value = document.querySelector<HTMLInputElement>('#identity-flow-form [name="invitation"]')?.value || '';
     identityState = await lookupInvitation(identityState, value, ports);
   } else if (action === 'confirm-join') {
-    const name = document.querySelector<HTMLInputElement>('#identity-flow-form [name="joinDisplayName"]')?.value || '';
+    const name = document.querySelector<HTMLInputElement>('#identity-flow-form [name="joinDisplayName"]')?.value || identityState.profile.displayName;
     identityState = await joinHome(identityState, name, ports);
     if (identityState.request === 'success') identityState = seedFirstTaskChoices(identityState);
   } else if (action === 'copy-invitation') {

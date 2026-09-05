@@ -3,6 +3,8 @@ import test from 'node:test';
 import { identityBackRoute, renderIdentityFlow } from '../src/app/identityFlowView.ts';
 import {
   createIdentityState,
+  createHome,
+  normalizeCreateHomeDraft,
   saveProfile,
   type IdentityPorts,
 } from '../src/features/identity/index.ts';
@@ -54,6 +56,46 @@ test('an empty required profile name is rejected before it is saved', async () =
   assert.equal(result.request, 'error');
   assert.match(result.message ?? '', /name/i);
   assert.equal(saveCalls, 0);
+});
+
+test('the Pen profile contract requires both a name and phone number', async () => {
+  let saveCalls = 0;
+  const state = createIdentityState('profile');
+  state.profile.displayName = 'Pawan';
+
+  const result = await saveProfile(state, unusedPorts({
+    saveProfile: async () => { saveCalls += 1; },
+  }));
+
+  assert.equal(result.request, 'error');
+  assert.match(result.message ?? '', /phone/i);
+  assert.equal(saveCalls, 0);
+});
+
+test('the two-field Pen home form maps to the existing atomic reducer payload', async () => {
+  let received: ReturnType<typeof normalizeCreateHomeDraft> | undefined;
+  const state = createIdentityState('create-home');
+  state.profile.displayName = 'Pawan';
+  state.createHome = {
+    ...state.createHome,
+    homeName: 'Sunshine Haven',
+    homeLabel: '',
+    displayName: 'Pawan',
+  };
+
+  const result = await createHome(state, unusedPorts({
+    createHome: async home => { received = home; },
+  }));
+
+  assert.equal(result.request, 'success');
+  assert.equal(result.route, 'bring-house-together');
+  assert.deepEqual(received, {
+    residenceName: 'Sunshine Haven',
+    address: 'Address not added',
+    homeName: 'Sunshine Haven',
+    homeLabel: 'Home',
+    displayName: 'Pawan',
+  });
 });
 
 test('profile opened from settings returns to settings', () => {

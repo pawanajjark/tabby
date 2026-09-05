@@ -46,17 +46,15 @@ export function renderIdentityScreen(state: IdentityFeatureState): IdentityScree
     case 'welcome':
       return { ...base, eyebrow: 'WELCOME TO TABBY', body: 'Groceries, meals, bills, notes, and house decisions stay in one calm conversation.', actions: [
         { id: 'create-home', label: 'Create a home', tone: 'primary' },
-        { id: 'join-home', label: 'Choose an existing home', tone: 'secondary' },
+        { id: 'join-home', label: 'Join a home', tone: 'secondary' },
       ] };
     case 'profile':
       return { ...base, body: 'Add the details housemates should recognize. Private conversation content is never part of this profile.', sections: [
         { id: 'identity', heading: 'Private account details', body: 'Name, phone, and email stay attached to the connected account.' },
         { id: 'preferences', heading: 'Household preferences', body: 'Dietary choices and cooking habits help with shared planning.' },
-      ], actions: [{ id: 'save-profile', label: 'Continue', tone: 'primary' }] };
+      ], actions: [{ id: 'save-profile', label: 'Continue', tone: 'primary', disabled: !state.profile.displayName.trim() || !state.profile.phone.trim() }] };
     case 'home-access':
-      return { ...base, body: 'Choose an existing home or create a new one.', actions: [
-        { id: 'create-home', label: 'Create a home', tone: 'primary' },
-      ] };
+      return { ...base, body: 'Choose an existing home or create a new one.', actions: [] };
     case 'create-home': {
       const preview = homePreview(state.createHome);
       return { ...base, body: 'Name the place in a way everyone will recognize.', sections: [

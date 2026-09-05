@@ -116,6 +116,18 @@ export const EMPTY_HOME: CreateHomeDraft = {
   residenceName: '', address: '', homeName: '', homeLabel: '', displayName: '',
 };
 
+export function normalizeCreateHomeDraft(draft: CreateHomeDraft): CreateHomeDraft {
+  const homeName = draft.homeName.trim();
+  const homeLabel = draft.homeLabel.trim();
+  return {
+    residenceName: draft.residenceName.trim() || homeName,
+    address: draft.address.trim() || homeLabel || 'Address not added',
+    homeName,
+    homeLabel: homeLabel || 'Home',
+    displayName: draft.displayName.trim(),
+  };
+}
+
 export const DEFAULT_BASICS: HomeBasicsDraft = {
   quietHoursStart: '', quietHoursEnd: '', defaultBillingSplit: 'equal', invitesEnabled: true,
 };
@@ -137,13 +149,12 @@ export function createIdentityState(route: IdentityRoute = 'welcome'): IdentityF
 }
 
 export function homePreview(draft: CreateHomeDraft): HomePreview | null {
-  const values = [draft.residenceName, draft.address, draft.homeName, draft.homeLabel, draft.displayName]
-    .map(value => value.trim());
-  if (values.some(value => !value)) return null;
+  const normalized = normalizeCreateHomeDraft(draft);
+  if (!normalized.homeName || !normalized.displayName) return null;
   return {
-    title: values[2],
-    location: `${values[3]}, ${values[0]} · ${values[1]}`,
-    memberLabel: `${values[4]} will be the first member`,
+    title: normalized.homeName,
+    location: draft.homeLabel.trim() || 'Address can be added later',
+    memberLabel: `${normalized.displayName} will be the first member`,
     privacyNote: 'Only invited members can see shared home details. Private conversations stay private.',
   };
 }

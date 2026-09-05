@@ -2,6 +2,7 @@ import {
   canDeleteAccount,
   homePreview,
   isCompleteInvitationCode,
+  normalizeCreateHomeDraft,
   normalizeInvitationCode,
   type AiConnectionState,
   type CreateHomeDraft,
@@ -44,6 +45,7 @@ function failed(state: IdentityFeatureState, cause: unknown): IdentityFeatureSta
 
 export async function saveProfile(state: IdentityFeatureState, ports: IdentityPorts): Promise<IdentityFeatureState> {
   if (!state.profile.displayName.trim()) return failed(state, new Error('Name is required.'));
+  if (!state.profile.phone.trim()) return failed(state, new Error('Phone number is required.'));
   const next = busy(state);
   try {
     await ports.saveProfile(state.profile);
@@ -54,11 +56,11 @@ export async function saveProfile(state: IdentityFeatureState, ports: IdentityPo
 }
 
 export async function createHome(state: IdentityFeatureState, ports: IdentityPorts): Promise<IdentityFeatureState> {
-  if (!homePreview(state.createHome)) return failed(state, new Error('Complete every home detail before continuing.'));
+  if (!homePreview(state.createHome)) return failed(state, new Error('Add a home name before continuing.'));
   const next = busy(state);
   try {
-    await ports.createHome(state.createHome);
-    return succeeded({ ...next, route: 'first-task' }, 'Home created.');
+    await ports.createHome(normalizeCreateHomeDraft(state.createHome));
+    return succeeded({ ...next, route: 'bring-house-together' }, 'Home created.');
   } catch (cause) {
     return failed(next, cause);
   }
