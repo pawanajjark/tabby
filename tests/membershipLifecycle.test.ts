@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const moduleSource = readFileSync(new URL('../spacetimedb/src/index.ts', import.meta.url), 'utf8');
+const clientSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
 
 function exportedBlock(name: string): string {
   const start = moduleSource.indexOf(`export const ${name} =`);
@@ -13,6 +14,29 @@ function exportedBlock(name: string): string {
 
 test('connecting does not make someone a household member', () => {
   assert.doesNotMatch(exportedBlock('on_connect'), /ctx\.db\.member\.(?:insert|identity\.update)/);
+});
+
+test('anonymous startup does not create a database conversation', () => {
+  const start = clientSource.indexOf('function ensureConversation()');
+  const end = clientSource.indexOf('\nfunction renderConversation()', start);
+  assert.notEqual(start, -1, 'missing ensureConversation');
+  assert.notEqual(end, -1, 'missing renderConversation boundary');
+  const block = clientSource.slice(start, end);
+
+  assert.match(block, /if \(!currentIdentityHasMembership\(\)\) \{[\s\S]*?return;/);
+  assert.match(block, /connection\.reducers\.createConversation/);
+});
+
+test('anonymous local chat never invokes conversation reducers', () => {
+  const persistStart = clientSource.indexOf('function persistConversationMessage(');
+  const persistEnd = clientSource.indexOf('\nfunction addMessage(', persistStart);
+  const createStart = clientSource.indexOf('function createNewConversation()');
+  const createEnd = clientSource.indexOf("\ndocument.querySelector('#new-conversation')", createStart);
+  const persistBlock = clientSource.slice(persistStart, persistEnd);
+  const createBlock = clientSource.slice(createStart, createEnd);
+
+  assert.match(persistBlock, /!currentIdentityHasMembership\(\)/);
+  assert.match(createBlock, /if \(currentIdentityHasMembership\(\)\)/);
 });
 
 test('changing a display name cannot create a membership', () => {

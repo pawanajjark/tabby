@@ -64,12 +64,12 @@ app.innerHTML = `
 
       <div class="rail-card account-switcher" id="rail-user-card">
         <button type="button" class="header-pill-badge user-pill account-switcher-button rail-card-header" id="header-user-badge" title="Switch account">
-          <span class="rail-avatar" id="rail-user-avatar">S</span>
+          <span class="rail-avatar" id="rail-user-avatar">?</span>
           <span class="account-switcher-copy rail-card-title">
-            <span class="rail-card-name" id="rail-user-name">Sam</span>
-            <span class="rail-card-sub" id="rail-user-phone">+91 98765 43210</span>
+            <span class="rail-card-name" id="rail-user-name">Account</span>
+            <span class="rail-card-sub" id="rail-user-phone">Set up your profile</span>
           </span>
-          <span class="sr-only" id="header-user-text">Sam</span>
+          <span class="sr-only" id="header-user-text">Account not set up</span>
         </button>
       </div>
 
@@ -172,8 +172,8 @@ app.innerHTML = `
       <p class="returning-user-copy">Returning to Tabby? Sign in below.</p>
       <div class="onboarding-section-heading"><span>PRIVATE SETUP</span><strong>Your profile</strong></div>
       <button type="button" id="fill-sam-demo" class="quick-demo-btn">Use Sam demo details</button>
-      <label>Name<input id="login-name" value="Sam" placeholder="Your name" required /></label>
-      <label>Phone number<input id="login-phone" value="+91 98765 43210" placeholder="+91 98765 43210" required /></label>
+      <label>Name<input id="login-name" placeholder="Your name" required /></label>
+      <label>Phone number<input id="login-phone" placeholder="+91 98765 43210" required /></label>
       <p class="privacy-note">Your conversations stay private. Only items you explicitly save appear in the Home shelf.</p>
       <div class="dialog-actions">
         <button type="button" class="secondary-button" data-close-dialog="login-dialog">Cancel</button>
@@ -198,7 +198,7 @@ app.innerHTML = `
         <label>Flat or address label<input id="new-flat-num" placeholder="Flat 402" /></label>
         <label>Home nickname<input id="new-flat-name" placeholder="Sunshine Haven" /></label>
       </div>
-      <label>Your name in this home<input id="onboard-display-name" value="Sam" required /></label>
+      <label>Your name in this home<input id="onboard-display-name" placeholder="Your name" required /></label>
       <section class="onboarding-preview">
         <p class="conversation-picker-label">STEP 3 OF 3 · INVITE AND BASICS</p>
         <h3>Bring the house together</h3>
@@ -438,7 +438,7 @@ function decodeStoredMessage(content: string): Pick<ConversationMessage, 'text' 
 }
 
 function persistConversationMessage(message: Omit<ConversationMessage, 'id'>) {
-  if (!isConnected || !activeConversationId || syncingConversation) return;
+  if (!isConnected || !activeConversationId || syncingConversation || !currentIdentityHasMembership()) return;
   try {
     connection.reducers.appendConversationMessage({
       conversationId: activeConversationId,
@@ -504,6 +504,11 @@ function renderConversationPicker() {
 }
 
 function ensureConversation() {
+  if (!currentIdentityHasMembership()) {
+    renderConversationPicker();
+    return;
+  }
+
   const rows = [...connection.db.myConversations.iter()];
   const saved = (currentIdentity && localStorage.getItem(`tabby_active_conversation:${currentIdentity}`)) ||
     localStorage.getItem('tabby_active_conversation_default') ||
@@ -1125,6 +1130,7 @@ function bindMessageActions() {
 function renderHeaderAndRailBadges() {
   const currentUser = AuthManager.getCurrentUser();
   const activeFlat = ResidenceManager.getActiveFlat();
+  const signedInName = currentUser.isLoggedIn ? currentUser.name.trim() : '';
 
   // Header badges
   const headerFlatText = document.querySelector<HTMLElement>('#header-flat-text');
@@ -1133,7 +1139,7 @@ function renderHeaderAndRailBadges() {
     headerFlatText.textContent = `${activeFlat.flatName} · ${activeFlat.flatNumber}`;
   }
   if (headerUserText) {
-    headerUserText.textContent = currentUser.name || 'Sam';
+    headerUserText.textContent = signedInName || 'Account not set up';
   }
 
   // Rail cards
@@ -1143,9 +1149,9 @@ function renderHeaderAndRailBadges() {
   const railFlatName = document.querySelector<HTMLElement>('#rail-flat-name');
   const railResidenceName = document.querySelector<HTMLElement>('#rail-residence-name');
 
-  if (railUserName) railUserName.textContent = currentUser.name || 'Sam';
-  if (railUserPhone) railUserPhone.textContent = currentUser.phone || '+91 98765 43210';
-  if (railUserAvatar) railUserAvatar.textContent = (currentUser.name || 'S').slice(0, 1).toUpperCase();
+  if (railUserName) railUserName.textContent = signedInName || 'Account';
+  if (railUserPhone) railUserPhone.textContent = signedInName ? (currentUser.phone || 'Phone not set') : 'Set up your profile';
+  if (railUserAvatar) railUserAvatar.textContent = signedInName ? signedInName.slice(0, 1).toUpperCase() : '?';
   if (railFlatName) railFlatName.textContent = activeFlat.flatName;
   if (railResidenceName) railResidenceName.textContent = `${activeFlat.flatNumber}, ${activeFlat.residenceName}`;
 }
@@ -1238,7 +1244,10 @@ function attachDatabaseListeners(conn: DbConnection) {
   conn.db.flatRule.onInsert(ifCurrent(renderAll));
   conn.db.flatRule.onUpdate(ifCurrent(renderAll));
   conn.db.flatRule.onDelete(ifCurrent(renderAll));
-  conn.db.member.onInsert(ifCurrent(renderAll));
+  conn.db.member.onInsert(ifCurrent(() => {
+    renderAll();
+    if (isPeopleSynchronized && isDatabaseSynchronized) ensureConversation();
+  }));
   conn.db.member.onUpdate(ifCurrent(renderAll));
   conn.db.member.onDelete(ifCurrent(renderAll));
   conn.db.pantryItem.onInsert(ifCurrent(renderAll));
@@ -1350,6 +1359,7 @@ function connectToDatabase() {
             }
           }
           maybeShowFirstRunOnboarding(isJoined);
+          if (isJoined && isDatabaseSynchronized) ensureConversation();
           renderAll();
         })
         .onError(errorContext => {
@@ -1380,7 +1390,7 @@ function connectToDatabase() {
             console.warn('Syncing residences from SpacetimeDB:', error);
           }
 
-          ensureConversation();
+          if (isPeopleSynchronized) ensureConversation();
           syncAiStatus();
           renderAll();
         })
@@ -1674,7 +1684,7 @@ function createNewConversation() {
   const identity = currentIdentity || 'local';
   localStorage.setItem(`tabby_active_conversation:${identity}`, id);
   localStorage.setItem('tabby_active_conversation_default', id);
-  if (isConnected) {
+  if (currentIdentityHasMembership()) {
     try {
       connection.reducers.createConversation({ conversationId: id, title: 'New conversation' });
     } catch (err) {
@@ -1766,8 +1776,8 @@ function showLoginDialog() {
   const user = AuthManager.getCurrentUser();
   const nameInput = document.querySelector<HTMLInputElement>('#login-name')!;
   const phoneInput = document.querySelector<HTMLInputElement>('#login-phone')!;
-  if (nameInput) nameInput.value = user.name || 'Sam';
-  if (phoneInput) phoneInput.value = user.phone || '+91 98765 43210';
+  if (nameInput) nameInput.value = user.isLoggedIn ? user.name : '';
+  if (phoneInput) phoneInput.value = user.isLoggedIn ? user.phone : '';
   openDialog('login-dialog');
 }
 
@@ -1862,7 +1872,8 @@ function populateOnboardingDropdowns() {
   const memberNameInput = document.querySelector<HTMLInputElement>('#onboard-display-name')!;
 
   if (memberNameInput) {
-    memberNameInput.value = AuthManager.getCurrentUser().name || 'Sam';
+    const user = AuthManager.getCurrentUser();
+    memberNameInput.value = user.isLoggedIn ? user.name : '';
   }
 
   if (resSelect) {
@@ -1910,7 +1921,11 @@ document.querySelector<HTMLFormElement>('#onboard-form')?.addEventListener('subm
   const flatSelect = document.querySelector<HTMLSelectElement>('#onboard-flat')!;
   const nameInput = document.querySelector<HTMLInputElement>('#onboard-display-name')!;
 
-  const displayName = nameInput.value.trim() || 'Sam';
+  const displayName = nameInput.value.trim();
+  if (!displayName) {
+    nameInput.focus();
+    return showToast('Please enter your name.', 'error');
+  }
   let resId = resSelect.value;
   let flatId = flatSelect.value;
   let newResidence: { name: string; address: string } | undefined;

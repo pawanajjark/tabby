@@ -35,6 +35,15 @@ test('fresh storage starts unauthenticated so onboarding can be shown', () => {
   assert.equal(user.name, '');
 });
 
+test('anonymous UI does not present the Sam demo identity as the current user', () => {
+  assert.doesNotMatch(mainSource, /id="rail-user-name">Sam</);
+  assert.doesNotMatch(mainSource, /id="header-user-text">Sam</);
+  assert.doesNotMatch(mainSource, /currentUser\.name \|\| 'Sam'/);
+  assert.doesNotMatch(mainSource, /id="login-name" value="Sam"/);
+  assert.doesNotMatch(mainSource, /id="onboard-display-name" value="Sam"/);
+  assert.doesNotMatch(mainSource, /nameInput\.value\.trim\(\) \|\| 'Sam'/);
+});
+
 test('name and phone are enough to continue onboarding', () => {
   const result = AuthManager.signIn('+91 98765 43210', 'Pawan');
 
