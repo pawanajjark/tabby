@@ -1246,7 +1246,6 @@ function connectToDatabase() {
   connectionAttemptInFlight = true;
   isConnecting = true;
   isDatabaseSynchronized = false;
-  renderAll();
 
   const nextConnection = DbConnection.builder()
     .withUri(host)
@@ -1337,6 +1336,7 @@ function connectToDatabase() {
 
   connection = nextConnection;
   attachDatabaseListeners(nextConnection);
+  renderAll();
 }
 
 function reconnectDatabaseImmediately() {
@@ -1358,8 +1358,6 @@ window.addEventListener('pageshow', reconnectDatabaseImmediately);
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') reconnectDatabaseImmediately();
 });
-
-connectToDatabase();
 
 AIProvider.configureBackend(request => connection.procedures.runAi({
   prompt: request.prompt,
@@ -1849,6 +1847,6 @@ document.querySelector<HTMLFormElement>('#onboard-form')?.addEventListener('subm
 });
 
 renderConversation();
-renderAll();
-syncAiStatus();
 setContextOpen(false);
+connectToDatabase();
+syncAiStatus();
