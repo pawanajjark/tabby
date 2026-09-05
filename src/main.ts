@@ -1007,7 +1007,8 @@ async function routeMessage(text: string) {
         .join('; ');
       const generated = await AIProvider.generateText(
         `Recent conversation:\n${recentConversation}\n\nCurrent request:\n${text}`,
-        `You are Tabby, a concise household coordination assistant. Answer practical home questions. Do not claim an action happened unless it was performed. Shared household context: ${householdContext || 'No shared memories yet.'}`,
+        `You are Tabby, a concise household coordination assistant. Answer practical home questions. If an image is provided, analyze and describe its relevant contents. Do not claim an action happened unless it was performed. Shared household context: ${householdContext || 'No shared memories yet.'}`,
+        attachedReceipt,
       );
       addMessage({
         role: 'assistant',

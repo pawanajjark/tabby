@@ -224,13 +224,13 @@ export class AIProvider {
     }
   }
 
-  static async generateText(prompt: string, instructions?: string): Promise<string | null> {
+  static async generateText(prompt: string, instructions?: string, imageDataUrl?: string): Promise<string | null> {
     if (!this.hasApiKey()) return null;
     try {
       const text = await this.executeRequest({
         prompt,
         instructions: instructions || 'Answer clearly and concisely.',
-        imageDataUrl: '',
+        imageDataUrl: imageDataUrl || '',
         jsonMode: false,
       });
       return text.trim() || null;
