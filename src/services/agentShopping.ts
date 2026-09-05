@@ -3,7 +3,7 @@ import { AIProvider } from './aiProvider';
 import { RoommateProfile } from './householdConfig';
 
 export interface PantryItemData {
-  id?: bigint;
+  id?: string | bigint;
   name: string;
   quantity: number;
   unit: string;

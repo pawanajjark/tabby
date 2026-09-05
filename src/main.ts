@@ -4,6 +4,8 @@ import { AgentShopping } from './services/agentShopping';
 import { AgentCooking, type Recipe } from './services/agentCooking';
 import { AgentBilling, type SplitResult } from './services/agentBilling';
 import { AIProvider } from './services/aiProvider';
+import { AuthManager, type AuthUser } from './services/authManager';
+import { ResidenceManager, type ResidenceItem, type FlatItem, type ActiveFlatSelection } from './services/residenceManager';
 import {
   HouseholdConfigManager,
   type DietaryTag,
@@ -37,6 +39,32 @@ app.innerHTML = `
         <p>One conversation for a well-run home.</p>
       </div>
 
+      <div class="rail-card" id="rail-user-card">
+        <div class="rail-card-header">
+          <div class="rail-card-title">
+            <span class="rail-avatar" id="rail-user-avatar">S</span>
+            <div>
+              <div class="rail-card-name" id="rail-user-name">Sam</div>
+              <div class="rail-card-sub" id="rail-user-phone">+91 98765 43210</div>
+            </div>
+          </div>
+        </div>
+        <button type="button" class="rail-card-btn" id="open-login-dialog">Switch user / Login</button>
+      </div>
+
+      <div class="rail-card" id="rail-flat-card">
+        <div class="rail-card-header">
+          <div class="rail-card-title">
+            <span style="font-size:1.15rem">🏢</span>
+            <div>
+              <div class="rail-card-name" id="rail-flat-name">Flat 402 · Sunshine Haven</div>
+              <div class="rail-card-sub" id="rail-residence-name">Palm Grove Residency</div>
+            </div>
+          </div>
+        </div>
+        <button type="button" class="rail-card-btn" id="open-onboard-dialog">🏢 Switch flat / Onboard</button>
+      </div>
+
       <div class="routing-guide">
         <p class="rail-label">How it works</p>
         <ol>
@@ -62,6 +90,8 @@ app.innerHTML = `
           <p class="connection-status"><span class="status-dot offline"></span><span id="status-text">Connecting to your home</span></p>
         </div>
         <div class="header-actions">
+          <button class="header-pill-badge" id="header-flat-badge" title="Click to switch flat or onboard">🏢 <span id="header-flat-text">Palm Grove · Flat 402</span></button>
+          <button class="header-pill-badge user-pill" id="header-user-badge" title="Click to switch user or login">👤 <span id="header-user-text">Sam</span></button>
           <div class="route-status idle" id="route-status" aria-live="polite">
             <span class="route-signal"></span>
             <span id="route-label">Ready</span>
@@ -112,10 +142,71 @@ app.innerHTML = `
       </section>
       <section class="context-section">
         <div class="section-heading"><h3>Pantry now</h3><span id="pantry-count">0</span></div>
+        <form id="quick-pantry-form" class="quick-pantry-form">
+          <input id="quick-pantry-name" placeholder="Quick add (e.g. Milk)" autocomplete="off" required />
+          <input id="quick-pantry-qty" type="number" min="1" value="1" />
+          <button type="submit" class="quick-add-btn">+ Add</button>
+        </form>
         <div id="pantry-list" class="context-list"></div>
+      </section>
+      <section class="context-section">
+        <div class="section-heading"><h3>Flat rules</h3><span id="rules-count">0</span></div>
+        <form id="quick-rule-form" class="quick-rule-form">
+          <select id="quick-rule-type">
+            <option value="explicit">Explicit</option>
+            <option value="implicit">Implicit</option>
+          </select>
+          <input id="quick-rule-title" placeholder="Rule (e.g. Quiet after 11 PM)" autocomplete="off" required />
+          <button type="submit" class="quick-add-btn">+ Add</button>
+        </form>
+        <div id="rules-list" class="context-list"></div>
       </section>
     </aside>
   </main>
+
+  <dialog id="login-dialog">
+    <form id="login-form" class="settings-form">
+      <div class="dialog-heading">
+        <div><h2>User Login</h2><p>Sign in with your phone and dummy OTP (1111).</p></div>
+        <button type="button" class="dialog-close" data-close-dialog="login-dialog">Close</button>
+      </div>
+      <button type="button" id="fill-sam-demo" class="quick-demo-btn">✨ Fill Demo: Sam (OTP: 1111)</button>
+      <label>Full name<input id="login-name" value="Sam" placeholder="Your name (e.g. Sam)" required /></label>
+      <label>Phone number<input id="login-phone" value="+91 98765 43210" placeholder="+91 98765 43210" required /></label>
+      <div id="otp-group" style="display: grid; gap: 8px;">
+        <div class="otp-hint-banner">💡 Demo verification code is <strong>1111</strong></div>
+        <label>4-digit OTP<input id="login-otp" class="otp-input-field" placeholder="1111" value="1111" maxlength="4" autocomplete="one-time-code" required /></label>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="secondary-button" data-close-dialog="login-dialog">Cancel</button>
+        <button type="submit" class="primary-button" id="login-submit-btn">Verify & Log in</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="onboard-dialog">
+    <form id="onboard-form" class="settings-form">
+      <div class="dialog-heading">
+        <div><h2>Join a Flat / Onboard</h2><p>Select or create your residence and flat to become a member.</p></div>
+        <button type="button" class="dialog-close" data-close-dialog="onboard-dialog">Close</button>
+      </div>
+      <label>Residence<select id="onboard-residence" class="dialog-select"></select></label>
+      <div id="new-residence-group" class="nested-input-group" hidden>
+        <label>Residence name<input id="new-res-name" placeholder="e.g. Greenwood Heights" /></label>
+        <label>Address / Area<input id="new-res-address" placeholder="e.g. Bellandur, Bengaluru" /></label>
+      </div>
+      <label>Flat<select id="onboard-flat" class="dialog-select"></select></label>
+      <div id="new-flat-group" class="nested-input-group" hidden>
+        <label>Flat number<input id="new-flat-num" placeholder="e.g. Flat 301" /></label>
+        <label>Flat nickname<input id="new-flat-name" placeholder="e.g. Sunshine Suite" /></label>
+      </div>
+      <label>Your Member Display Name<input id="onboard-display-name" value="Sam" required /></label>
+      <div class="dialog-actions">
+        <button type="button" class="secondary-button" data-close-dialog="onboard-dialog">Cancel</button>
+        <button type="submit" class="primary-button" id="onboard-submit-btn">Join Flat</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="profile-dialog">
     <form id="profile-form" class="settings-form">
@@ -148,7 +239,7 @@ app.innerHTML = `
   <dialog id="ai-dialog">
     <form id="ai-form" class="settings-form">
       <div class="dialog-heading">
-        <div><h2>AI settings</h2><p>Connect OpenAI to enable smart grocery planning, recipe recommendations, and vision receipt parsing.</p></div>
+        <div><h2>AI & Database settings</h2><p>Configure OpenAI connection or purge stale database state.</p></div>
         <button type="button" class="dialog-close" data-close-dialog="ai-dialog">Close</button>
       </div>
       <div id="ai-status-indicator" class="ai-status-badge"></div>
@@ -156,6 +247,7 @@ app.innerHTML = `
       <label>Model<input id="ai-model" autocomplete="off" placeholder="gpt-4o-mini" /></label>
       <div class="dialog-actions">
         <button type="button" id="disconnect-ai" class="secondary-button danger-button" style="margin-right: auto;" hidden>Disconnect</button>
+        <button type="button" id="reset-tabby-db" class="secondary-button danger-button" style="margin-right: auto;">Reset DB data</button>
         <button type="button" class="secondary-button" data-close-dialog="ai-dialog">Cancel</button>
         <button type="submit" class="primary-button">Save settings</button>
       </div>
@@ -421,47 +513,259 @@ function getSharedContext(): SharedContextRecord[] {
 function getRoommates(): RoommateProfile[] {
   const shared = getSharedContext();
   const members = [...connection.db.member.iter()];
-  if (members.length === 0 && currentIdentity) {
-    return [HouseholdConfigManager.getProfile(currentIdentity, 'You')];
-  }
-  return members.map(member => {
-    const identity = member.identity.toHexString();
-    const displayName = memberName(identity, member.displayName);
-    const profile = HouseholdConfigManager.getProfile(identity, displayName);
-    profile.displayName = displayName;
-    const facts = shared.filter(record => record.subjectIdentity === identity);
-    for (const fact of facts) {
-      if (fact.category === 'diet') {
-        const diet = fact.value.replace(/ /g, '_') as DietaryTag;
-        if (!profile.dietaryTags.includes(diet)) profile.dietaryTags.push(diet);
+  const currentUser = AuthManager.getCurrentUser();
+  const activeFlat = ResidenceManager.getActiveFlat();
+  const allFlats = ResidenceManager.getFlats();
+  const currentFlatObj = allFlats.find(f => f.id === activeFlat.flatId);
+  const flatRoommateNames = currentFlatObj?.defaultRoommates || [currentUser.name || 'Sam'];
+
+  const result: RoommateProfile[] = [];
+  const seenNames = new Set<string>();
+
+  if (members.length > 0) {
+    for (const member of members) {
+      const identity = member.identity.toHexString();
+      const displayName = memberName(identity, member.displayName);
+      const profile = HouseholdConfigManager.getProfile(identity, displayName);
+      profile.displayName = displayName;
+      const facts = shared.filter(record => record.subjectIdentity === identity);
+      for (const fact of facts) {
+        if (fact.category === 'diet') {
+          const diet = fact.value.replace(/ /g, '_') as DietaryTag;
+          if (!profile.dietaryTags.includes(diet)) profile.dietaryTags.push(diet);
+        }
+        if (fact.category === 'routine' && !profile.cookingHabits.includes(fact.value)) profile.cookingHabits.push(fact.value);
       }
-      if (fact.category === 'routine' && !profile.cookingHabits.includes(fact.value)) profile.cookingHabits.push(fact.value);
+      result.push(profile);
+      seenNames.add(displayName.toLowerCase());
     }
-    return profile;
-  });
+  }
+
+  // Ensure current logged in user is represented
+  const currentUserName = currentUser.name || 'Sam';
+  if (!seenNames.has(currentUserName.toLowerCase())) {
+    const userProfile = HouseholdConfigManager.getProfile(currentIdentity || 'local-user', currentUserName);
+    userProfile.displayName = currentUserName;
+    result.unshift(userProfile);
+    seenNames.add(currentUserName.toLowerCase());
+  }
+
+  // Add remaining default roommates of this flat
+  for (const name of flatRoommateNames) {
+    if (!seenNames.has(name.toLowerCase())) {
+      const fakeId = `mock-${name.toLowerCase()}`;
+      const profile = HouseholdConfigManager.getProfile(fakeId, name);
+      profile.displayName = name;
+      result.push(profile);
+      seenNames.add(name.toLowerCase());
+    }
+  }
+
+  return result;
 }
 
 function currentName() {
-  return getRoommates().find(roommate => roommate.identityHex === currentIdentity)?.displayName || 'You';
+  const currentUser = AuthManager.getCurrentUser();
+  if (currentUser && currentUser.name) return currentUser.name;
+  return getRoommates().find(roommate => roommate.identityHex === currentIdentity)?.displayName || 'Sam';
+}
+
+interface LocalPantryItem {
+  id: string;
+  name: string;
+  quantity: number;
+  unit: string;
+}
+
+function getLocalPantry(): LocalPantryItem[] {
+  try {
+    const raw = localStorage.getItem('tabby_local_pantry');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+function saveLocalPantry(items: LocalPantryItem[]) {
+  try {
+    localStorage.setItem('tabby_local_pantry', JSON.stringify(items));
+  } catch {}
 }
 
 function pantryData() {
-  return [...connection.db.pantryItem.iter()].map(item => ({
-    id: item.id,
+  const dbRows = [...connection.db.pantryItem.iter()].map(item => ({
+    id: item.id.toString(),
     name: item.name,
     quantity: item.quantity,
     unit: item.unit,
   }));
+
+  if (dbRows.length > 0) {
+    saveLocalPantry(dbRows);
+    return dbRows;
+  }
+
+  return getLocalPantry();
+}
+
+function addOrUpdatePantryItem(name: string, quantity: number, unit: string) {
+  const cleanName = name.trim().toLowerCase();
+  if (!cleanName || quantity === 0) return;
+
+  const cleanUnit = unit.trim() || 'items';
+  const local = getLocalPantry();
+  const existingIndex = local.findIndex(i => i.name.toLowerCase() === cleanName);
+
+  if (existingIndex >= 0) {
+    local[existingIndex].quantity = Math.max(0, local[existingIndex].quantity + quantity);
+    local[existingIndex].unit = cleanUnit;
+  } else if (quantity > 0) {
+    local.push({ id: crypto.randomUUID(), name: cleanName, quantity, unit: cleanUnit });
+  }
+  const filtered = local.filter(i => i.quantity > 0);
+  saveLocalPantry(filtered);
+
+  if (isConnected) {
+    try {
+      connection.reducers.addPantryItem({ name: cleanName, quantity, unit: cleanUnit });
+    } catch (err) {
+      console.warn('SpacetimeDB addPantryItem notice:', err);
+    }
+  }
+
+  renderContextPanel();
+}
+
+export interface LocalFlatRule {
+  id: string;
+  ruleType: 'implicit' | 'explicit';
+  title: string;
+  description: string;
+}
+
+function getLocalRules(): LocalFlatRule[] {
+  try {
+    const raw = localStorage.getItem('tabby_flat_rules');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [
+    { id: '1', ruleType: 'explicit', title: 'Quiet hours after 11 PM', description: 'Keep common area volume low.' },
+    { id: '2', ruleType: 'implicit', title: 'Restock milk when empty', description: 'Whoever finishes milk adds it to grocery list.' },
+  ];
+}
+
+function saveLocalRules(rules: LocalFlatRule[]) {
+  try {
+    localStorage.setItem('tabby_flat_rules', JSON.stringify(rules));
+  } catch {}
+}
+
+function flatRulesData(): LocalFlatRule[] {
+  if (connection?.db?.flatRule) {
+    try {
+      const activeFlat = ResidenceManager.getActiveFlat();
+      const activeFlatId = BigInt(activeFlat.flatId.match(/^\d+$/) ? activeFlat.flatId : '1');
+      const dbRows = [...connection.db.flatRule.iter()]
+        .filter(r => r.flatId === activeFlatId || !r.flatId || r.flatId === 0n)
+        .map(r => ({
+          id: r.id.toString(),
+          ruleType: (r.ruleType === 'implicit' ? 'implicit' : 'explicit') as 'implicit' | 'explicit',
+          title: r.title,
+          description: r.description || '',
+        }));
+      if (dbRows.length > 0) {
+        saveLocalRules(dbRows);
+        return dbRows;
+      }
+    } catch (e) {
+      console.warn('flatRulesData read notice:', e);
+    }
+  }
+  return getLocalRules();
+}
+
+function addOrUpdateFlatRule(ruleType: 'implicit' | 'explicit', title: string, description = '') {
+  const rules = getLocalRules();
+  rules.push({ id: crypto.randomUUID(), ruleType, title, description });
+  saveLocalRules(rules);
+  if (isConnected) {
+    try {
+      connection.reducers.upsertFlatRule({
+        id: 0n,
+        ruleType,
+        title,
+        description,
+      });
+    } catch (e) {
+      console.warn('upsertFlatRule notice:', e);
+    }
+  }
+  renderContextPanel();
+}
+
+function deleteFlatRule(id: string) {
+  const rules = getLocalRules().filter(r => r.id !== id);
+  saveLocalRules(rules);
+  if (isConnected) {
+    try {
+      connection.reducers.deleteFlatRule({ id: BigInt(id.match(/^\d+$/) ? id : '0') });
+    } catch (e) {
+      console.warn('deleteFlatRule notice:', e);
+    }
+  }
+  renderContextPanel();
+}
+
+function clearAllTabbyData() {
+  if (!confirm('Are you sure you want to clear all data in Tabby database? This will reset all pantry items, expenses, memories, and conversations.')) {
+    return;
+  }
+
+  if (isConnected) {
+    try {
+      (connection.reducers as any).clearAllData?.({});
+    } catch (err) {
+      console.warn('clearAllData notice:', err);
+    }
+  }
+
+  localStorage.removeItem('tabby_local_pantry');
+  localStorage.removeItem('tabby_flat_rules');
+  localStorage.removeItem('tabby_brain_private_v1');
+  const allKeys = Object.keys(localStorage);
+  for (const k of allKeys) {
+    if (k.startsWith('tabby_convo:') || k.startsWith('tabby_active_conversation:')) {
+      localStorage.removeItem(k);
+    }
+  }
+
+  const newId = crypto.randomUUID();
+  activeConversationId = newId;
+  localStorage.setItem('tabby_active_conversation_default', newId);
+  conversation = [welcomeMessage];
+  saveLocalConversation(newId, conversation);
+
+  document.querySelector<HTMLDialogElement>('#ai-dialog')?.close();
+  renderConversation();
+  renderAll();
+  showToast('All database and local data has been purged.');
 }
 
 function renderContextPanel() {
   const roommates = getRoommates();
   const memory = getSharedContext();
   const pantry = pantryData().filter(item => item.quantity > 0).sort((a, b) => a.name.localeCompare(b.name));
+  const rules = flatRulesData();
 
   document.querySelector('#people-count')!.textContent = String(roommates.length);
   document.querySelector('#memory-count')!.textContent = String(memory.length);
   document.querySelector('#pantry-count')!.textContent = String(pantry.length);
+  document.querySelector('#rules-count')!.textContent = String(rules.length);
 
   document.querySelector('#people-list')!.innerHTML = roommates.length
     ? roommates.map(roommate => `
@@ -477,12 +781,52 @@ function renderContextPanel() {
         <span class="memory-category">${escapeHtml(formatCategory(fact.category))}</span>
         <p><strong>${escapeHtml(fact.subjectName)}</strong> · ${escapeHtml(fact.value)}</p>
       </div>`).join('')
-    : '<p class="empty-state">No shared preferences yet. State a food preference in chat to add one.</p>';
+    : '<p class="empty-state">No shared user insights yet. State a preference in chat to add one.</p>';
 
   document.querySelector('#pantry-list')!.innerHTML = pantry.length
-    ? pantry.slice(0, 10).map(item => `
-      <div class="pantry-row"><span>${escapeHtml(item.name)}</span><strong>${item.quantity} ${escapeHtml(item.unit)}</strong></div>`).join('')
-    : '<p class="empty-state">The pantry is empty. Tell Grocery what you bought.</p>';
+    ? pantry.map(item => `
+      <div class="pantry-row">
+        <span>${escapeHtml(item.name)}</span>
+        <div class="pantry-actions">
+          <strong>${item.quantity} ${escapeHtml(item.unit)}</strong>
+          <button type="button" class="pantry-item-del" data-remove-pantry="${escapeHtml(item.name)}" title="Remove item">×</button>
+        </div>
+      </div>`).join('')
+    : '<p class="empty-state">The pantry is empty. Tell Grocery what you bought or add items above.</p>';
+
+  document.querySelector('#rules-list')!.innerHTML = rules.length
+    ? rules.map(rule => `
+      <div class="rule-row">
+        <div class="rule-row-header">
+          <span class="rule-badge ${rule.ruleType}">${rule.ruleType}</span>
+          <button type="button" class="pantry-item-del" data-remove-rule="${escapeHtml(rule.id)}" title="Delete rule">×</button>
+        </div>
+        <div class="rule-title">${escapeHtml(rule.title)}</div>
+        ${rule.description ? `<small style="color: var(--muted);">${escapeHtml(rule.description)}</small>` : ''}
+      </div>`).join('')
+    : '<p class="empty-state">No flat rules yet. Add house rules above.</p>';
+
+  document.querySelectorAll<HTMLButtonElement>('[data-remove-pantry]').forEach(btn => {
+    btn.onclick = () => {
+      const name = btn.dataset.removePantry || '';
+      if (!name) return;
+      const current = pantry.find(p => p.name.toLowerCase() === name.toLowerCase());
+      if (current) {
+        addOrUpdatePantryItem(name, -current.quantity, current.unit);
+        showToast(`Removed ${name} from pantry.`);
+      }
+    };
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-remove-rule]').forEach(btn => {
+    btn.onclick = () => {
+      const id = btn.dataset.removeRule || '';
+      if (id) {
+        deleteFlatRule(id);
+        showToast('Rule removed.');
+      }
+    };
+  });
 }
 
 function publishSharedFacts(facts: MemoryFact[]) {
@@ -592,13 +936,13 @@ async function routeMessage(text: string) {
 
   try {
     if (analysis.intent === 'grocery') {
-      const purchase = text.match(/\b(?:bought|added|got)\s+(\d+(?:\.\d+)?)\s*([a-zA-Z]+)?\s+(?:of\s+)?(.+)/i);
-      const pantryAddition = text.match(/\b(?:add|put)\s+(.+?)\s+(?:to|in)\s+(?:the\s+)?pantry\b/i);
-      if ((purchase || pantryAddition) && isConnected) {
+      const purchase = text.match(/\b(?:bought|added|got|purchased|have|store|stock)\s+(\d+(?:\.\d+)?)\s*([a-zA-Z]+)?\s+(?:of\s+)?(.+)/i);
+      const pantryAddition = text.match(/\b(?:add|put|store|stock)\s+(.+?)\s+(?:to|in)\s+(?:the\s+)?pantry\b/i);
+      if (purchase || pantryAddition) {
         const quantity = purchase ? Math.max(1, Math.round(Number(purchase[1]))) : 1;
         const unit = purchase?.[2] || 'items';
         const name = (purchase?.[3] || pantryAddition?.[1] || '').replace(/[.!?]+$/, '').trim();
-        connection.reducers.addPantryItem({ name, quantity, unit });
+        addOrUpdatePantryItem(name, quantity, unit);
         addMessage({ role: 'assistant', agent: 'grocery', text: `Added ${quantity} ${unit} of ${name} to the shared pantry.` });
       } else {
         const plan = await AgentShopping.generateShoppingPlan(pantryData(), getRoommates(), text);
@@ -680,20 +1024,18 @@ async function routeMessage(text: string) {
 function bindMessageActions() {
   document.querySelectorAll<HTMLButtonElement>('[data-add-pantry]').forEach(button => {
     button.onclick = () => {
-      if (!isConnected) return showToast('Connect to the shared home before updating the pantry.', 'error');
-      connection.reducers.addPantryItem({
-        name: button.dataset.addPantry!,
-        quantity: Math.max(1, Math.round(Number(button.dataset.quantity))),
-        unit: button.dataset.unit || 'items',
-      });
+      const name = button.dataset.addPantry || '';
+      const qty = Math.max(1, Math.round(Number(button.dataset.quantity)));
+      const unit = button.dataset.unit || 'items';
+      addOrUpdatePantryItem(name, qty, unit);
       button.textContent = 'Added';
       button.disabled = true;
+      showToast(`Added ${qty} ${unit} of ${name} to the pantry.`);
     };
   });
 
   document.querySelectorAll<HTMLButtonElement>('[data-cook-recipe]').forEach(button => {
     button.onclick = () => {
-      if (!isConnected) return showToast('Connect to the shared home before updating the pantry.', 'error');
       const recipe = currentRecipes.get(button.dataset.cookRecipe!);
       if (!recipe) return;
       const pantry = pantryData();
@@ -705,7 +1047,7 @@ function bindMessageActions() {
           return pantryName.includes(ingredientName) || ingredientName.includes(pantryName);
         });
         if (match && match.quantity > 0) {
-          connection.reducers.addPantryItem({ name: match.name, quantity: -1, unit: match.unit });
+          addOrUpdatePantryItem(match.name, -1, match.unit);
           updated += 1;
         }
       }
@@ -726,8 +1068,37 @@ function bindMessageActions() {
   });
 }
 
+function renderHeaderAndRailBadges() {
+  const currentUser = AuthManager.getCurrentUser();
+  const activeFlat = ResidenceManager.getActiveFlat();
+
+  // Header badges
+  const headerFlatText = document.querySelector<HTMLElement>('#header-flat-text');
+  const headerUserText = document.querySelector<HTMLElement>('#header-user-text');
+  if (headerFlatText) {
+    headerFlatText.textContent = `${activeFlat.residenceName.split(' ')[0]} · ${activeFlat.flatNumber}`;
+  }
+  if (headerUserText) {
+    headerUserText.textContent = currentUser.name || 'Sam';
+  }
+
+  // Rail cards
+  const railUserName = document.querySelector<HTMLElement>('#rail-user-name');
+  const railUserPhone = document.querySelector<HTMLElement>('#rail-user-phone');
+  const railUserAvatar = document.querySelector<HTMLElement>('#rail-user-avatar');
+  const railFlatName = document.querySelector<HTMLElement>('#rail-flat-name');
+  const railResidenceName = document.querySelector<HTMLElement>('#rail-residence-name');
+
+  if (railUserName) railUserName.textContent = currentUser.name || 'Sam';
+  if (railUserPhone) railUserPhone.textContent = currentUser.phone || '+91 98765 43210';
+  if (railUserAvatar) railUserAvatar.textContent = (currentUser.name || 'S').slice(0, 1).toUpperCase();
+  if (railFlatName) railFlatName.textContent = `${activeFlat.flatNumber} · ${activeFlat.flatName}`;
+  if (railResidenceName) railResidenceName.textContent = activeFlat.residenceName;
+}
+
 function renderAll() {
   renderContextPanel();
+  renderHeaderAndRailBadges();
   const status = document.querySelector('#status-text')!;
   status.textContent = isConnected ? 'Live with your household' : 'Offline — local chat still works';
   document.querySelector('.status-dot')?.classList.toggle('offline', !isConnected);
@@ -778,11 +1149,28 @@ const connection = DbConnection.builder()
     isConnected = true;
     ctx.subscriptionBuilder()
       .onApplied(() => {
+        const user = AuthManager.getCurrentUser();
+        if (user && user.name) {
+          try {
+            connection.reducers.setDisplayName({ displayName: user.name });
+          } catch (e) {
+            console.warn('Syncing displayName to SpacetimeDB:', e);
+          }
+        }
+        try {
+          const dbRes = [...connection.db.residence.iter()];
+          const dbFlats = [...connection.db.flat.iter()];
+          ResidenceManager.syncFromDb(dbRes, dbFlats);
+        } catch (e) {}
+
         ensureConversation();
         syncAiStatus();
         renderAll();
       })
       .subscribe([
+        tables.residence,
+        tables.flat,
+        tables.flatRule,
         tables.member,
         tables.pantryItem,
         tables.expense,
@@ -811,6 +1199,25 @@ AIProvider.configureBackend(request => connection.procedures.runAi({
   jsonMode: request.jsonMode,
 }));
 
+connection.db.residence.onInsert(() => {
+  ResidenceManager.syncFromDb([...connection.db.residence.iter()], [...connection.db.flat.iter()]);
+  renderAll();
+});
+connection.db.residence.onUpdate(() => {
+  ResidenceManager.syncFromDb([...connection.db.residence.iter()], [...connection.db.flat.iter()]);
+  renderAll();
+});
+connection.db.flat.onInsert(() => {
+  ResidenceManager.syncFromDb([...connection.db.residence.iter()], [...connection.db.flat.iter()]);
+  renderAll();
+});
+connection.db.flat.onUpdate(() => {
+  ResidenceManager.syncFromDb([...connection.db.residence.iter()], [...connection.db.flat.iter()]);
+  renderAll();
+});
+connection.db.flatRule.onInsert(renderAll);
+connection.db.flatRule.onUpdate(renderAll);
+connection.db.flatRule.onDelete(renderAll);
 connection.db.member.onInsert(renderAll);
 connection.db.member.onUpdate(renderAll);
 connection.db.pantryItem.onInsert(renderAll);
@@ -818,6 +1225,10 @@ connection.db.pantryItem.onUpdate(renderAll);
 connection.db.pantryItem.onDelete(renderAll);
 connection.db.sharedMemory.onInsert(renderAll);
 connection.db.sharedMemory.onUpdate(renderAll);
+connection.db.expense.onInsert(renderAll);
+connection.db.expense.onUpdate(renderAll);
+connection.db.expenseSplit.onInsert(renderAll);
+connection.db.expenseSplit.onUpdate(renderAll);
 connection.db.myAiStatus.onInsert(syncAiStatus);
 connection.db.myAiStatus.onUpdate(syncAiStatus);
 connection.db.myAiStatus.onDelete(syncAiStatus);
@@ -1104,7 +1515,212 @@ contextToggle.addEventListener('click', () => setContextOpen(!contextPanel.class
 document.querySelector('#context-close')!.addEventListener('click', () => setContextOpen(false));
 window.addEventListener('resize', () => setContextOpen(false));
 
+document.querySelector<HTMLFormElement>('#quick-rule-form')?.addEventListener('submit', event => {
+  event.preventDefault();
+  const typeSelect = document.querySelector<HTMLSelectElement>('#quick-rule-type')!;
+  const titleInput = document.querySelector<HTMLInputElement>('#quick-rule-title')!;
+  const ruleType = (typeSelect.value === 'implicit' ? 'implicit' : 'explicit') as 'implicit' | 'explicit';
+  const title = titleInput.value.trim();
+  if (!title) return;
+  addOrUpdateFlatRule(ruleType, title);
+  titleInput.value = '';
+  showToast(`Added ${ruleType} flat rule.`);
+});
+
+document.querySelector('#reset-tabby-db')?.addEventListener('click', clearAllTabbyData);
+
+document.querySelector<HTMLFormElement>('#quick-pantry-form')?.addEventListener('submit', event => {
+  event.preventDefault();
+  const nameInput = document.querySelector<HTMLInputElement>('#quick-pantry-name')!;
+  const qtyInput = document.querySelector<HTMLInputElement>('#quick-pantry-qty')!;
+  const name = nameInput.value.trim();
+  const quantity = Math.max(1, parseInt(qtyInput.value, 10) || 1);
+  if (!name) return;
+  addOrUpdatePantryItem(name, quantity, 'items');
+  nameInput.value = '';
+  qtyInput.value = '1';
+  showToast(`Added ${quantity} ${name} to the pantry.`);
+});
+
+// Login Modal Logic
+function showLoginDialog() {
+  const user = AuthManager.getCurrentUser();
+  const nameInput = document.querySelector<HTMLInputElement>('#login-name')!;
+  const phoneInput = document.querySelector<HTMLInputElement>('#login-phone')!;
+  const otpInput = document.querySelector<HTMLInputElement>('#login-otp')!;
+  if (nameInput) nameInput.value = user.name || 'Sam';
+  if (phoneInput) phoneInput.value = user.phone || '+91 98765 43210';
+  if (otpInput) otpInput.value = '1111';
+  openDialog('login-dialog');
+}
+
+function fillSamDemo() {
+  const nameInput = document.querySelector<HTMLInputElement>('#login-name')!;
+  const phoneInput = document.querySelector<HTMLInputElement>('#login-phone')!;
+  const otpInput = document.querySelector<HTMLInputElement>('#login-otp')!;
+  if (nameInput) nameInput.value = 'Sam';
+  if (phoneInput) phoneInput.value = '+91 98765 43210';
+  if (otpInput) otpInput.value = '1111';
+  showToast('Demo details filled: Sam (Dummy OTP: 1111)');
+}
+
+document.querySelector('#open-login-dialog')?.addEventListener('click', showLoginDialog);
+document.querySelector('#header-user-badge')?.addEventListener('click', showLoginDialog);
+document.querySelector('#fill-sam-demo')?.addEventListener('click', fillSamDemo);
+
+document.querySelector<HTMLFormElement>('#login-form')?.addEventListener('submit', event => {
+  event.preventDefault();
+  const nameInput = document.querySelector<HTMLInputElement>('#login-name')!;
+  const phoneInput = document.querySelector<HTMLInputElement>('#login-phone')!;
+  const otpInput = document.querySelector<HTMLInputElement>('#login-otp')!;
+
+  const name = nameInput.value.trim();
+  const phone = phoneInput.value.trim();
+  const otp = otpInput.value.trim();
+
+  const verification = AuthManager.verifyOtp(phone, otp, name);
+  if (!verification.success) {
+    return showToast(verification.message, 'error');
+  }
+
+  if (isConnected) {
+    try {
+      connection.reducers.setDisplayName({ displayName: name });
+    } catch (e) {
+      console.warn('SpacetimeDB setDisplayName notice:', e);
+    }
+  }
+
+  document.querySelector<HTMLDialogElement>('#login-dialog')?.close();
+  renderAll();
+  showToast(verification.message, 'success');
+});
+
+// Flat Onboarding Modal Logic
+function updateOnboardFlatsDropdown() {
+  const resSelect = document.querySelector<HTMLSelectElement>('#onboard-residence')!;
+  const flatSelect = document.querySelector<HTMLSelectElement>('#onboard-flat')!;
+  const newResGroup = document.querySelector<HTMLElement>('#new-residence-group')!;
+  const newFlatGroup = document.querySelector<HTMLElement>('#new-flat-group')!;
+
+  if (!resSelect || !flatSelect) return;
+  const selectedResId = resSelect.value;
+  if (selectedResId === '__new__') {
+    if (newResGroup) newResGroup.hidden = false;
+    flatSelect.innerHTML = `<option value="__new__">+ Create new flat...</option>`;
+    if (newFlatGroup) newFlatGroup.hidden = false;
+    return;
+  }
+
+  if (newResGroup) newResGroup.hidden = true;
+  const flats = ResidenceManager.getFlats(selectedResId);
+  const activeFlat = ResidenceManager.getActiveFlat();
+
+  flatSelect.innerHTML = flats.map(f => `
+    <option value="${escapeHtml(f.id)}" ${f.id === activeFlat.flatId ? 'selected' : ''}>${escapeHtml(f.flatNumber)} — ${escapeHtml(f.name)}</option>
+  `).join('') + `<option value="__new__">+ Create new flat...</option>`;
+
+  if (newFlatGroup) {
+    newFlatGroup.hidden = flatSelect.value !== '__new__';
+  }
+}
+
+function populateOnboardingDropdowns() {
+  const residences = ResidenceManager.getResidences();
+  const activeFlat = ResidenceManager.getActiveFlat();
+  const resSelect = document.querySelector<HTMLSelectElement>('#onboard-residence')!;
+  const memberNameInput = document.querySelector<HTMLInputElement>('#onboard-display-name')!;
+
+  if (memberNameInput) {
+    memberNameInput.value = AuthManager.getCurrentUser().name || 'Sam';
+  }
+
+  if (resSelect) {
+    resSelect.innerHTML = residences.map(r => `
+      <option value="${escapeHtml(r.id)}" ${r.id === activeFlat.residenceId ? 'selected' : ''}>${escapeHtml(r.name)} (${escapeHtml(r.address)})</option>
+    `).join('') + `<option value="__new__">+ Add new residence...</option>`;
+  }
+
+  updateOnboardFlatsDropdown();
+}
+
+function showOnboardingDialog() {
+  populateOnboardingDropdowns();
+  openDialog('onboard-dialog');
+}
+
+document.querySelector('#open-onboard-dialog')?.addEventListener('click', showOnboardingDialog);
+document.querySelector('#header-flat-badge')?.addEventListener('click', showOnboardingDialog);
+document.querySelector('#onboard-residence')?.addEventListener('change', updateOnboardFlatsDropdown);
+document.querySelector('#onboard-flat')?.addEventListener('change', () => {
+  const flatSelect = document.querySelector<HTMLSelectElement>('#onboard-flat')!;
+  const newFlatGroup = document.querySelector<HTMLElement>('#new-flat-group')!;
+  if (newFlatGroup && flatSelect) {
+    newFlatGroup.hidden = flatSelect.value !== '__new__';
+  }
+});
+
+document.querySelector<HTMLFormElement>('#onboard-form')?.addEventListener('submit', event => {
+  event.preventDefault();
+  const resSelect = document.querySelector<HTMLSelectElement>('#onboard-residence')!;
+  const flatSelect = document.querySelector<HTMLSelectElement>('#onboard-flat')!;
+  const nameInput = document.querySelector<HTMLInputElement>('#onboard-display-name')!;
+
+  const displayName = nameInput.value.trim() || 'Sam';
+  let resId = resSelect.value;
+  let flatId = flatSelect.value;
+
+  if (resId === '__new__') {
+    const resName = (document.querySelector<HTMLInputElement>('#new-res-name')?.value || '').trim() || 'New Residency';
+    const resAddress = (document.querySelector<HTMLInputElement>('#new-res-address')?.value || '').trim() || 'Bengaluru';
+    const newRes = ResidenceManager.addResidence(resName, resAddress);
+    resId = newRes.id;
+    if (isConnected) {
+      try {
+        (connection.reducers as any).create_residence?.({ name: resName, address: resAddress });
+      } catch (e) {}
+    }
+  }
+
+  if (flatId === '__new__') {
+    const flatNum = (document.querySelector<HTMLInputElement>('#new-flat-num')?.value || '').trim() || 'Flat 101';
+    const flatName = (document.querySelector<HTMLInputElement>('#new-flat-name')?.value || '').trim() || 'Family Flat';
+    const newFlat = ResidenceManager.addFlat(resId, flatName, flatNum);
+    flatId = newFlat.id;
+    if (isConnected) {
+      try {
+        (connection.reducers as any).create_and_join_flat?.({
+          residence_id: BigInt(resId.match(/^\d+$/) ? resId : '1'),
+          flat_name: flatName,
+          flat_number: flatNum,
+          display_name: displayName,
+        });
+      } catch (e) {}
+    }
+  } else {
+    if (isConnected) {
+      try {
+        (connection.reducers as any).join_flat?.({
+          flat_id: BigInt(flatId.match(/^\d+$/) ? flatId : '1'),
+          display_name: displayName,
+        });
+      } catch (e) {}
+    }
+  }
+
+  // Update AuthManager and local active flat
+  const currentUser = AuthManager.getCurrentUser();
+  currentUser.name = displayName;
+  AuthManager.saveUser(currentUser);
+
+  const activeSelection = ResidenceManager.onboardMember(resId, flatId, displayName);
+  document.querySelector<HTMLDialogElement>('#onboard-dialog')?.close();
+  renderAll();
+  showToast(`Onboarded as ${displayName} in ${activeSelection.flatNumber} (${activeSelection.flatName})!`, 'success');
+});
+
 renderConversation();
 renderAll();
 syncAiStatus();
 setContextOpen(false);
+

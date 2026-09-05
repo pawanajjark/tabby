@@ -8,7 +8,9 @@ import {
 } from "spacetimedb";
 
 export default __t.row({
-  identity: __t.identity().primaryKey(),
-  flatId: __t.u64().name("flat_id"),
-  displayName: __t.string().name("display_name"),
+  id: __t.u64().primaryKey(),
+  residenceId: __t.u64().name("residence_id"),
+  name: __t.string(),
+  flatNumber: __t.string().name("flat_number"),
+  createdAt: __t.timestamp().name("created_at"),
 });
