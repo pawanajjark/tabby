@@ -939,7 +939,7 @@ function renderSplit(split: SplitResult) {
 
 async function routeMessage(text: string) {
   setRoute('general', true);
-  const analysis = await TabbyBrain.analyze(text);
+  const analysis = await TabbyBrain.analyze(text, conversation, getSharedContext());
   TabbyBrain.savePrivateFacts(currentIdentity || 'local', analysis.privateFacts);
   publishSharedFacts(analysis.shareableFacts);
   setRoute(analysis.intent, true);
@@ -970,9 +970,8 @@ async function routeMessage(text: string) {
       }
     } else if (analysis.intent === 'context' || analysis.shareableFacts.length > 0) {
       const answer = TabbyBrain.answerContextQuestion(text, getSharedContext());
-      const factSummaries = analysis.shareableFacts.map(f => f.value).join(', ');
-      const responseText = factSummaries
-        ? `Noted! I added that preference ("${factSummaries}") to the shared household context. Other housemates and agents can account for it.`
+      const responseText = analysis.shareableFacts.length > 0
+        ? `Noted! I captured these insights in your household context: ${analysis.shareableFacts.map(f => `"${f.value}"`).join(', ')}.`
         : (answer || 'I added that preference to the shared household context. Other housemates can ask me about it when planning food or expenses.');
       addMessage({
         role: 'assistant',

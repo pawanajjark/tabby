@@ -31,7 +31,7 @@ const INTENT_RULES: Array<[AgentIntent, RegExp]> = [
   ['grocery', /\b(bought|buy|pantry|grocery|groceries|restock|stock|shopping|ran out|need more)\b/i],
 ];
 
-const SAFE_SHARED_CATEGORIES = new Set<MemoryCategory>(['diet', 'allergy', 'food_preference', 'routine']);
+const SAFE_SHARED_CATEGORIES = new Set<MemoryCategory>(['diet', 'allergy', 'food_preference', 'routine', 'household_note']);
 const STORAGE_PREFIX = 'tabby_brain_private_v1';
 
 function normalized(value: string) {
@@ -70,13 +70,28 @@ export class TabbyBrain {
     return INTENT_RULES.find(([, pattern]) => pattern.test(message))?.[0] ?? 'general';
   }
 
-  static async analyze(message: string): Promise<BrainAnalysis> {
+  static async analyze(
+    message: string,
+    recentHistory: Array<{ role: string; text?: string }> = [],
+    existingContext: SharedContextRecord[] = []
+  ): Promise<BrainAnalysis> {
     const heuristicIntent = this.detectIntent(message);
-    const heuristicFacts = this.extractFacts(message);
+    const heuristicFacts = this.extractFacts(message, recentHistory, existingContext);
     let intent = heuristicIntent;
     let facts = heuristicFacts;
 
     if (AIProvider.hasApiKey()) {
+      const historySummary = recentHistory
+        .slice(-8)
+        .map(msg => `${msg.role}: ${msg.text || ''}`)
+        .filter(t => t.trim().length > 0)
+        .join('\n');
+
+      const contextSummary = existingContext
+        .slice(0, 15)
+        .map(c => `${c.subjectName}: [${c.category}] ${c.value}`)
+        .join('; ');
+
       const result = await AIProvider.generateJson<{
         intent?: AgentIntent;
         facts?: Array<{
@@ -86,18 +101,30 @@ export class TabbyBrain {
           visibility?: 'private' | 'shared';
         }>;
       }>(
-        `Analyze this household chat message for routing and durable preferences.\n\nMessage: ${message}`,
-        `You are TabbyBrain, an accurate household intent and memory classifier.
-Route to exactly ONE intent:
-- "context": When the user is stating or updating a personal/household preference, diet, allergy, like/dislike (e.g. "I like chicken", "I prefer mutton biriyani", "except when...", "I am vegetarian").
-- "chef": ONLY when the user explicitly asks for recipes, instructions on how to cook/make a dish, or meal suggestions (e.g. "How do I make biriyani?", "Give me a dinner recipe", "What can I cook?").
+        `Recent Conversation History:\n${historySummary || 'None'}\n\nExisting Shared Household Memories:\n${contextSummary || 'None'}\n\nNew Message to Analyze:\n${message}`,
+        `You are TabbyBrain, an expert household intent classifier and high-recall insight extractor.
+
+Intent Routing Rules:
+- "context": When the user states, updates, refines, queries, or clarifies personal/household preferences, food likes/dislikes, dietary rules, habits, allergies, or exceptions.
+- "chef": ONLY when the user explicitly requests a recipe, asks how to cook/make a dish, or asks for meal suggestions right now (e.g. "How do I make biriyani?", "Give me a dinner recipe", "What can I cook?").
 - "grocery": When discussing buying items, restocking, shopping lists, or pantry additions.
 - "billing": When discussing receipts, expenses, paying bills, splitting costs.
 - "general": General conversation or queries that don't match above.
 
-Extract only facts explicitly stated by the speaker (likes, dislikes, exceptions, diets, allergies).
-Shared facts are limited to diet, food allergy, food preference, and household cooking routine.
-Return JSON with intent and facts.`
+MAXIMAL INSIGHT EXTRACTION RULES:
+Extract every explicit, implicit, contextual, conditional, and exception preference:
+1. Coreference & Context Resolution:
+   - If the user says "Except when it is in Biriyani", resolve "it" using previous messages or context (e.g. if the user liked "Chicken", "it" refers to chicken).
+   - Extract the full contextual dislike/exception explicitly: "Dislikes chicken biriyani / does not like chicken in biriyani".
+2. Multi-Insight Extraction:
+   - For a message like "Except when it is in Biriyani. I generally prefer mutton biriyani":
+     * Extract fact 1: category "food_preference", key "dislikes", value "Dislikes chicken in biriyani / chicken biriyani", visibility "shared"
+     * Extract fact 2: category "food_preference", key "preference", value "Prefers mutton biriyani", visibility "shared"
+3. Extract all explicit likes, dislikes, avoids, favorites, dietary tags, allergies, and cooking routines.
+4. Allowed categories: "diet", "allergy", "food_preference", "routine", "household_note".
+5. Set visibility to "shared" for all food preferences, exceptions, allergies, diets, and routines.
+
+Return valid JSON with "intent" and "facts".`
       );
 
       if (result?.intent && ['grocery', 'chef', 'billing', 'context', 'general'].includes(result.intent)) {
@@ -179,7 +206,7 @@ Return JSON with intent and facts.`
       .sort((a, b) => b.score - a.score);
 
     const relevant = (ranked.length > 0 ? ranked : records.map(record => ({ record, score: 0 })))
-      .slice(0, 4)
+      .slice(0, 6)
       .map(item => item.record);
 
     const byPerson = new Map<string, string[]>();
@@ -194,10 +221,32 @@ Return JSON with intent and facts.`
       .join(' ');
   }
 
-  private static extractFacts(message: string): MemoryFact[] {
+  private static extractFacts(
+    message: string,
+    recentHistory: Array<{ role: string; text?: string }> = [],
+    existingContext: SharedContextRecord[] = []
+  ): MemoryFact[] {
     const facts: MemoryFact[] = [];
     const sentences = message.split(/(?<=[.!?\n])\s+/).filter(s => s.trim().length > 0);
     const targetPhrases = sentences.length > 1 ? [message, ...sentences] : [message];
+
+    // Find previous food subject if available (e.g., "chicken" from "I like chicken")
+    let previousFoodSubject = '';
+    for (let i = recentHistory.length - 1; i >= 0; i--) {
+      const text = recentHistory[i].text || '';
+      const m = text.match(/\b(?:i like|i love|prefer|eat)\s+([a-zA-Z\s]+)/i);
+      if (m) {
+        previousFoodSubject = normalized(m[1]).split(/\s+(?:and|or|but|except)\s+/i)[0].trim();
+        break;
+      }
+    }
+    if (!previousFoodSubject && existingContext.length > 0) {
+      const foodFact = existingContext.find(c => c.category === 'food_preference' && c.key === 'likes');
+      if (foodFact) {
+        const m = foodFact.value.match(/Likes\s+([a-zA-Z\s]+)/i);
+        if (m) previousFoodSubject = normalized(m[1]);
+      }
+    }
 
     for (const phrase of targetPhrases) {
       const diet = phrase.match(/\b(?:i am|i'm|im)\s+(vegetarian|vegan|eggetarian|jain|halal|gluten[- ]free|lactose[- ]intolerant)\b/i);
@@ -209,11 +258,25 @@ Return JSON with intent and facts.`
       const avoid = phrase.match(/\b(?:i do not eat|i don't eat|i avoid|i cannot eat|i can't eat)\s+([^.!?]+)/i);
       if (avoid) facts.push(makeFact('food_preference', 'avoids', `Avoids ${normalized(avoid[1])}`, 'shared'));
 
+      const dislike = phrase.match(/\b(?:i do not like|i don't like|i dislike|i hate)\s+([^.!?]+)/i);
+      if (dislike) facts.push(makeFact('food_preference', 'dislikes', `Dislikes ${normalized(dislike[1])}`, 'shared'));
+
       const like = phrase.match(/\b(?:i like|i love|my favorite (?:food|dish|meal) is)\s+([^.!?]+)/i);
       if (like) facts.push(makeFact('food_preference', 'likes', `Likes ${normalized(like[1])}`, 'shared'));
 
-      const preference = phrase.match(/\b(?:i generally prefer|i prefer|except when it is in|except when|i dislike|i hate)\s+([^.!?]+)/i);
-      if (preference) facts.push(makeFact('food_preference', 'preference', normalized(preference[0]), 'shared'));
+      const exception = phrase.match(/\b(?:except when it is in|except in|except when in|except for|not when in|not in)\s+([^.!?]+)/i);
+      if (exception) {
+        const targetDish = normalized(exception[1]);
+        if (previousFoodSubject) {
+          facts.push(makeFact('food_preference', 'dislikes', `Dislikes ${previousFoodSubject} in ${targetDish}`, 'shared'));
+          facts.push(makeFact('food_preference', 'avoids', `Avoids ${previousFoodSubject} in ${targetDish}`, 'shared'));
+        } else {
+          facts.push(makeFact('food_preference', 'exception', `Except in ${targetDish}`, 'shared'));
+        }
+      }
+
+      const preference = phrase.match(/\b(?:i generally prefer|i prefer)\s+([^.!?]+)/i);
+      if (preference) facts.push(makeFact('food_preference', 'preference', `Prefers ${normalized(preference[1])}`, 'shared'));
 
       const routine = phrase.match(/\b(?:i usually|i normally|every (?:morning|evening|week|weekend) i)\s+([^.!?]+)/i);
       if (routine) facts.push(makeFact('routine', 'routine', normalized(routine[0]), 'shared'));
