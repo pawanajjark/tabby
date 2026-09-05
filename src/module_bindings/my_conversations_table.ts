@@ -12,6 +12,7 @@ import {
 
 export default __t.row({
   id: __t.string().primaryKey(),
+  flatId: __t.u64().name("flat_id"),
   owner: __t.identity(),
   title: __t.string(),
   createdAt: __t.timestamp().name("created_at"),

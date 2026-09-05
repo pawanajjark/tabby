@@ -22,3 +22,10 @@ test('changing a display name cannot create a membership', () => {
 test('explicit flat onboarding can create a membership', () => {
   assert.match(exportedBlock('join_flat'), /ctx\.db\.member\.insert/);
 });
+
+test('creating a home and joining it is one atomic membership transaction', () => {
+  const block = exportedBlock('create_home_and_join');
+  assert.match(block, /ctx\.db\.residence\.insert/);
+  assert.match(block, /ctx\.db\.flat\.insert/);
+  assert.match(block, /ctx\.db\.member\.insert/);
+});

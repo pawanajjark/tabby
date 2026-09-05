@@ -6,21 +6,35 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
-import AddChatMessageReducer from "../add_chat_message_reducer";
 import AddPantryItemReducer from "../add_pantry_item_reducer";
 import AppendConversationMessageReducer from "../append_conversation_message_reducer";
+import ClearAllDataReducer from "../clear_all_data_reducer";
+import CreateAndJoinFlatReducer from "../create_and_join_flat_reducer";
 import CreateConversationReducer from "../create_conversation_reducer";
+import CreateHomeAndJoinReducer from "../create_home_and_join_reducer";
+import CreateResidenceReducer from "../create_residence_reducer";
+import DeleteFlatRuleReducer from "../delete_flat_rule_reducer";
+import JoinFlatReducer from "../join_flat_reducer";
 import RecordExpenseReducer from "../record_expense_reducer";
 import SetAiConfigReducer from "../set_ai_config_reducer";
 import SetDisplayNameReducer from "../set_display_name_reducer";
+import UpdateResidenceFlatReducer from "../update_residence_flat_reducer";
+import UpsertFlatRuleReducer from "../upsert_flat_rule_reducer";
 import UpsertSharedMemoryReducer from "../upsert_shared_memory_reducer";
 
-export type AddChatMessageParams = __Infer<typeof AddChatMessageReducer>;
 export type AddPantryItemParams = __Infer<typeof AddPantryItemReducer>;
 export type AppendConversationMessageParams = __Infer<typeof AppendConversationMessageReducer>;
+export type ClearAllDataParams = __Infer<typeof ClearAllDataReducer>;
+export type CreateAndJoinFlatParams = __Infer<typeof CreateAndJoinFlatReducer>;
 export type CreateConversationParams = __Infer<typeof CreateConversationReducer>;
+export type CreateHomeAndJoinParams = __Infer<typeof CreateHomeAndJoinReducer>;
+export type CreateResidenceParams = __Infer<typeof CreateResidenceReducer>;
+export type DeleteFlatRuleParams = __Infer<typeof DeleteFlatRuleReducer>;
+export type JoinFlatParams = __Infer<typeof JoinFlatReducer>;
 export type RecordExpenseParams = __Infer<typeof RecordExpenseReducer>;
 export type SetAiConfigParams = __Infer<typeof SetAiConfigReducer>;
 export type SetDisplayNameParams = __Infer<typeof SetDisplayNameReducer>;
+export type UpdateResidenceFlatParams = __Infer<typeof UpdateResidenceFlatReducer>;
+export type UpsertFlatRuleParams = __Infer<typeof UpsertFlatRuleReducer>;
 export type UpsertSharedMemoryParams = __Infer<typeof UpsertSharedMemoryReducer>;
 

@@ -31,16 +31,9 @@ export const AiVerification = __t.object("AiVerification", {
 });
 export type AiVerification = __Infer<typeof AiVerification>;
 
-export const ChatMessage = __t.object("ChatMessage", {
-  id: __t.u64(),
-  body: __t.string(),
-  sender: __t.identity(),
-  kind: __t.string(),
-});
-export type ChatMessage = __Infer<typeof ChatMessage>;
-
 export const Conversation = __t.object("Conversation", {
   id: __t.string(),
+  flatId: __t.u64(),
   owner: __t.identity(),
   title: __t.string(),
   createdAt: __t.timestamp(),
@@ -61,6 +54,7 @@ export type ConversationMessage = __Infer<typeof ConversationMessage>;
 
 export const Expense = __t.object("Expense", {
   id: __t.u64(),
+  flatId: __t.u64(),
   title: __t.string(),
   amountPaise: __t.i64(),
   paidBy: __t.identity(),
@@ -79,8 +73,29 @@ export const ExpenseSplit = __t.object("ExpenseSplit", {
 });
 export type ExpenseSplit = __Infer<typeof ExpenseSplit>;
 
+export const Flat = __t.object("Flat", {
+  id: __t.u64(),
+  residenceId: __t.u64(),
+  name: __t.string(),
+  flatNumber: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type Flat = __Infer<typeof Flat>;
+
+export const FlatRule = __t.object("FlatRule", {
+  id: __t.u64(),
+  flatId: __t.u64(),
+  ruleType: __t.string(),
+  title: __t.string(),
+  description: __t.string(),
+  createdBy: __t.identity(),
+  createdAt: __t.timestamp(),
+});
+export type FlatRule = __Infer<typeof FlatRule>;
+
 export const Member = __t.object("Member", {
   identity: __t.identity(),
+  flatId: __t.u64(),
   displayName: __t.string(),
 });
 export type Member = __Infer<typeof Member>;
@@ -96,6 +111,7 @@ export type MyConversations = __Infer<typeof MyConversations>;
 
 export const PantryItem = __t.object("PantryItem", {
   id: __t.u64(),
+  flatId: __t.u64(),
   name: __t.string(),
   quantity: __t.i32(),
   unit: __t.string(),
@@ -103,8 +119,17 @@ export const PantryItem = __t.object("PantryItem", {
 });
 export type PantryItem = __Infer<typeof PantryItem>;
 
+export const Residence = __t.object("Residence", {
+  id: __t.u64(),
+  name: __t.string(),
+  address: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type Residence = __Infer<typeof Residence>;
+
 export const SharedMemory = __t.object("SharedMemory", {
   id: __t.u64(),
+  flatId: __t.u64(),
   subjectIdentity: __t.identity(),
   subjectName: __t.string(),
   category: __t.string(),

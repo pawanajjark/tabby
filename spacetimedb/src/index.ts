@@ -296,6 +296,40 @@ export const create_and_join_flat = spacetimedb.reducer(
   },
 );
 
+export const create_home_and_join = spacetimedb.reducer(
+  {
+    residence_name: t.string(),
+    address: t.string(),
+    flat_name: t.string(),
+    flat_number: t.string(),
+    display_name: t.string(),
+  },
+  (ctx, args) => {
+    const residenceName = args.residence_name.trim();
+    const displayName = args.display_name.trim();
+    if (!residenceName) throw new SenderError('Residence name is required.');
+    if (!displayName) throw new SenderError('Please choose a display name.');
+
+    const residence = ctx.db.residence.insert({
+      id: 0n,
+      name: residenceName,
+      address: args.address.trim() || 'Bengaluru',
+      created_at: ctx.timestamp,
+    });
+    const flat = ctx.db.flat.insert({
+      id: 0n,
+      residence_id: residence.id,
+      name: args.flat_name.trim() || 'My Flat',
+      flat_number: args.flat_number.trim() || '101',
+      created_at: ctx.timestamp,
+    });
+    const current = ctx.db.member.identity.find(ctx.sender);
+    const member = { identity: ctx.sender, flat_id: flat.id, display_name: displayName };
+    if (current) ctx.db.member.identity.update(member);
+    else ctx.db.member.insert(member);
+  },
+);
+
 export const create_residence = spacetimedb.reducer(
   { name: t.string(), address: t.string() },
   (ctx, { name, address }) => {
