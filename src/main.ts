@@ -6,6 +6,7 @@ import { AgentBilling, type SplitResult } from './services/agentBilling';
 import { AIProvider } from './services/aiProvider';
 import { AuthManager, type AuthUser } from './services/authManager';
 import { ResidenceManager, type ResidenceItem, type FlatItem, type ActiveFlatSelection } from './services/residenceManager';
+import { selectFlatRoommates } from './services/roommateList';
 import {
   HouseholdConfigManager,
   type DietaryTag,
@@ -340,6 +341,14 @@ function memberName(identity: string, name: string) {
   return clean && clean.toLowerCase() !== 'roommate' ? clean : `Housemate ${identity.slice(0, 6)}`;
 }
 
+function currentIdentityHasMembership() {
+  return Boolean(
+    isConnected &&
+    currentIdentity &&
+    [...connection.db.member.iter()].some(member => member.identity.toHexString() === currentIdentity),
+  );
+}
+
 function showToast(
   message: string,
   tone: 'success' | 'error' = 'success',
@@ -530,53 +539,33 @@ function getSharedContext(): SharedContextRecord[] {
 
 function getRoommates(): RoommateProfile[] {
   const shared = getSharedContext();
-  const members = [...connection.db.member.iter()];
-  const currentUser = AuthManager.getCurrentUser();
   const activeFlat = ResidenceManager.getActiveFlat();
-  const allFlats = ResidenceManager.getFlats();
-  const currentFlatObj = allFlats.find(f => f.id === activeFlat.flatId);
-  const flatRoommateNames = currentFlatObj?.defaultRoommates || [currentUser.name || 'Sam'];
+  const members = selectFlatRoommates(
+    [...connection.db.member.iter()].map(member => ({
+      identityHex: member.identity.toHexString(),
+      flatId: member.flatId.toString(),
+      displayName: member.displayName,
+    })),
+    activeFlat.flatId,
+    currentIdentity,
+  );
 
   const result: RoommateProfile[] = [];
-  const seenNames = new Set<string>();
 
-  if (members.length > 0) {
-    for (const member of members) {
-      const identity = member.identity.toHexString();
-      const displayName = memberName(identity, member.displayName);
-      const profile = HouseholdConfigManager.getProfile(identity, displayName);
-      profile.displayName = displayName;
-      const facts = shared.filter(record => record.subjectIdentity === identity);
-      for (const fact of facts) {
-        if (fact.category === 'diet') {
-          const diet = fact.value.replace(/ /g, '_') as DietaryTag;
-          if (!profile.dietaryTags.includes(diet)) profile.dietaryTags.push(diet);
-        }
-        if (fact.category === 'routine' && !profile.cookingHabits.includes(fact.value)) profile.cookingHabits.push(fact.value);
+  for (const member of members) {
+    const identity = member.identityHex;
+    const displayName = memberName(identity, member.displayName);
+    const profile = HouseholdConfigManager.getProfile(identity, displayName);
+    profile.displayName = displayName;
+    const facts = shared.filter(record => record.subjectIdentity === identity);
+    for (const fact of facts) {
+      if (fact.category === 'diet') {
+        const diet = fact.value.replace(/ /g, '_') as DietaryTag;
+        if (!profile.dietaryTags.includes(diet)) profile.dietaryTags.push(diet);
       }
-      result.push(profile);
-      seenNames.add(displayName.toLowerCase());
+      if (fact.category === 'routine' && !profile.cookingHabits.includes(fact.value)) profile.cookingHabits.push(fact.value);
     }
-  }
-
-  // Ensure current logged in user is represented
-  const currentUserName = currentUser.name || 'Sam';
-  if (!seenNames.has(currentUserName.toLowerCase())) {
-    const userProfile = HouseholdConfigManager.getProfile(currentIdentity || 'local-user', currentUserName);
-    userProfile.displayName = currentUserName;
-    result.unshift(userProfile);
-    seenNames.add(currentUserName.toLowerCase());
-  }
-
-  // Add remaining default roommates of this flat
-  for (const name of flatRoommateNames) {
-    if (!seenNames.has(name.toLowerCase())) {
-      const fakeId = `mock-${name.toLowerCase()}`;
-      const profile = HouseholdConfigManager.getProfile(fakeId, name);
-      profile.displayName = name;
-      result.push(profile);
-      seenNames.add(name.toLowerCase());
-    }
+    result.push(profile);
   }
 
   return result;
@@ -791,7 +780,7 @@ function renderContextPanel() {
         <span class="avatar">${escapeHtml(roommate.displayName.slice(0, 1).toUpperCase())}</span>
         <span><strong>${escapeHtml(roommate.displayName)}</strong><small>${roommate.identityHex === currentIdentity ? 'You' : 'Housemate'}</small></span>
       </div>`).join('')
-    : '<p class="empty-state">People will appear when the home connects.</p>';
+    : '<p class="empty-state">People appear after they choose Join Flat.</p>';
 
   document.querySelector('#memory-list')!.innerHTML = memory.length
     ? memory.slice(0, 8).map(fact => `
@@ -1190,6 +1179,7 @@ function attachDatabaseListeners(conn: DbConnection) {
   conn.db.flatRule.onDelete(ifCurrent(renderAll));
   conn.db.member.onInsert(ifCurrent(renderAll));
   conn.db.member.onUpdate(ifCurrent(renderAll));
+  conn.db.member.onDelete(ifCurrent(renderAll));
   conn.db.pantryItem.onInsert(ifCurrent(renderAll));
   conn.db.pantryItem.onUpdate(ifCurrent(renderAll));
   conn.db.pantryItem.onDelete(ifCurrent(renderAll));
@@ -1271,7 +1261,9 @@ function connectToDatabase() {
           reconnectAttempt = 0;
           isDatabaseSynchronized = true;
           const user = AuthManager.getCurrentUser();
-          if (user && user.name) {
+          const isJoined = [...ctx.db.member.iter()]
+            .some(member => member.identity.toHexString() === currentIdentity);
+          if (isJoined && user && user.name) {
             try {
               ctx.reducers.setDisplayName({ displayName: user.name });
             } catch (error) {
@@ -1431,7 +1423,7 @@ document.querySelector<HTMLFormElement>('#profile-form')!.addEventListener('subm
   const dietaryTags = [...document.querySelectorAll<HTMLInputElement>('input[name="diet"]:checked')].map(input => input.value as DietaryTag);
   const cookingHabits = document.querySelector<HTMLInputElement>('#profile-habits')!.value.split(',').map(value => value.trim()).filter(Boolean);
   HouseholdConfigManager.saveProfile({ identityHex: identity, displayName, dietaryTags, cookingHabits, customSplitExclusions: [] });
-  if (isConnected) {
+  if (currentIdentityHasMembership()) {
     connection.reducers.setDisplayName({ displayName });
     publishSharedFacts(dietaryTags.map(diet => TabbyBrain.createSharedFact('diet', 'diet', diet.replace(/_/g, ' '))));
     cookingHabits.forEach(habit => publishSharedFacts([TabbyBrain.createSharedFact('routine', 'cooking habit', habit)]));
@@ -1710,7 +1702,7 @@ document.querySelector<HTMLFormElement>('#login-form')?.addEventListener('submit
     return showToast(verification.message, 'error');
   }
 
-  if (isConnected) {
+  if (currentIdentityHasMembership()) {
     try {
       connection.reducers.setDisplayName({ displayName: name });
     } catch (e) {

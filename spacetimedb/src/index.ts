@@ -254,14 +254,7 @@ function ensureDefaultResidenceAndFlat(ctx: any): { residenceId: bigint; flatId:
 }
 
 export const on_connect = spacetimedb.clientConnected(ctx => {
-  const { flatId } = ensureDefaultResidenceAndFlat(ctx);
-  if (ctx.db.member.identity.find(ctx.sender) === null) {
-    ctx.db.member.insert({
-      identity: ctx.sender,
-      flat_id: flatId,
-      display_name: defaultMemberName(ctx.sender.toHexString()),
-    });
-  }
+  ensureDefaultResidenceAndFlat(ctx);
 });
 
 export const join_flat = spacetimedb.reducer(
@@ -345,13 +338,9 @@ export const set_display_name = spacetimedb.reducer(
   (ctx, { display_name }) => {
     const name = display_name.trim();
     if (!name) throw new SenderError('Please choose a display name.');
-    const { flatId } = ensureDefaultResidenceAndFlat(ctx);
     const current = ctx.db.member.identity.find(ctx.sender);
-    if (current) {
-      ctx.db.member.identity.update({ ...current, display_name: name });
-    } else {
-      ctx.db.member.insert({ identity: ctx.sender, flat_id: flatId, display_name: name });
-    }
+    if (!current) throw new SenderError('Join a flat before updating your display name.');
+    ctx.db.member.identity.update({ ...current, display_name: name });
   },
 );
 
