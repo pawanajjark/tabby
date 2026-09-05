@@ -189,7 +189,7 @@ app.innerHTML = `
         </div>
         <div>
           <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-secondary);">Model Name</label>
-          <input id="openai-model-input" placeholder="gpt-4o-mini or gpt-4o" value="gpt-4o-mini" />
+          <input id="openai-model-input" placeholder="gpt-5.6-sol" value="gpt-5.6-sol" />
         </div>
       </div>
       <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px;">
