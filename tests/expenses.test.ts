@@ -62,6 +62,36 @@ test('the expenses route renders balances, history, and settle actions from sync
   assert.match(html, /data-settle-counterparty="asha"/);
 });
 
+test('the expenses route explains a newly recorded expense', () => {
+  const a = identity('asha');
+  const d = identity('dev');
+  const projection = projectExpenseBalances({
+    currentIdentity: d,
+    members: [{ identity: a, displayName: 'Asha' }, { identity: d, displayName: 'Dev' }],
+    expenses: [{ id: 10n, title: 'E2E groceries', amountPaise: 100n, paidBy: a, category: 'groceries' }],
+    metadata: [{ expenseId: 10n, expenseDateMicros: 1_725_552_000_000_000n, recordedAtMicros: 1_725_552_000_000_000n, splitMethod: 'equal' }],
+    splits: [
+      { id: 1n, expenseId: 10n, memberIdentity: a, amountPaise: 50n, settled: true, reason: 'Equal split' },
+      { id: 2n, expenseId: 10n, memberIdentity: d, amountPaise: 50n, settled: false, reason: 'Equal split' },
+    ],
+    settlements: [],
+  });
+
+  const html = renderExpenseBalances(projection, {
+    online: true,
+    currentIdentity: d.toHexString(),
+    recentlyRecorded: { title: 'E2E groceries', amountPaise: 100n, ownSharePaise: 50n },
+  });
+
+  assert.match(html, /Expense recorded/);
+  assert.match(html, /E2E groceries/);
+  assert.match(html, /Your share/);
+  assert.match(html, /₹0\.50/);
+  assert.match(html, /Balances are live/);
+  assert.match(html, /expense-history-item is-latest/);
+  assert.doesNotMatch(html, /Bill review is a preview/);
+});
+
 test('settlement activity keeps a dated audit trail after an open balance is cleared', () => {
   const a = identity('asha');
   const d = identity('dev');

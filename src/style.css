@@ -122,6 +122,22 @@
 .expenses-route button { min-height: 42px; padding: 0 15px; color: var(--paper); font: 650 .72rem/1 'Inter', sans-serif; background: var(--clay); border: 1px solid var(--clay); border-radius: 9px; }
 .expenses-route button:hover:not(:disabled) { background: var(--clay-dark); border-color: var(--clay-dark); }
 .expenses-route button:disabled { cursor: not-allowed; opacity: .46; }
+.expense-recorded-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 18px;
+  background: color-mix(in srgb, var(--sage) 10%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--sage) 38%, var(--linen));
+  border-radius: 14px;
+}
+.expense-recorded-banner h2 { margin: 3px 0 5px; font-size: 1.1rem; }
+.expense-recorded-banner p { margin: 0; color: var(--stone); font-size: .76rem; line-height: 1.45; }
+.expense-recorded-banner .eyebrow { margin: 0; color: var(--success) !important; }
+.expense-recorded-banner > span { display: grid; gap: 4px; flex: 0 0 auto; text-align: right; }
+.expense-recorded-banner > span small { color: var(--stone); font-size: .65rem; }
+.expense-recorded-banner > span strong { color: var(--success); font-size: 1.15rem; font-variant-numeric: tabular-nums; }
 .expenses-offline { margin: -16px 0 0; padding: 11px 13px; color: var(--ink); background: var(--warning-soft); border: 1px solid color-mix(in srgb, var(--saffron) 35%, var(--linen)); border-radius: 10px; font-size: .74rem; }
 .expense-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .expense-summary-grid article { display: grid; align-content: start; gap: 7px; min-height: 126px; padding: 20px; background: var(--paper); border: 1px solid var(--linen); border-radius: 14px; box-shadow: 0 8px 24px rgba(74, 59, 43, .04); }
@@ -146,6 +162,8 @@
 .expense-history-item summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: center; min-height: 72px; padding: 14px 18px; cursor: pointer; list-style-position: outside; }
 .expense-history-item summary::marker { color: var(--clay); }
 .expense-history-item summary > span:last-child { text-align: right; }
+.expense-history-item.is-latest { border: 1px solid color-mix(in srgb, var(--sage) 38%, var(--linen)); border-radius: 10px; margin: 6px; }
+.expense-history-item.is-latest + .expense-history-item { border-top: 1px solid var(--linen); }
 .expense-share-list { padding: 0 18px 12px 34px; background: color-mix(in srgb, var(--oat) 50%, var(--paper)); }
 .expense-share-list > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 54px; border-top: 1px solid var(--linen); }
 .expense-settlement-list article { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 66px; padding: 12px 18px; border-bottom: 1px solid var(--linen); }
@@ -179,6 +197,10 @@
 .bill-line-allocations { display: grid; gap: 8px; }
 .bill-person { grid-template-columns: minmax(100px, 1fr) 120px auto; align-items: center; }
 .bill-person input { min-height: 40px; }
+.bill-person-name { min-width: 0; overflow-wrap: anywhere; }
+.bill-exempt-control { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: .68rem; white-space: nowrap; }
+.bill-exempt-control input { min-height: 20px; }
+.bill-person > input[type='checkbox'] { width: 22px; min-height: 22px; }
 .bill-review footer { display: grid; gap: 9px; }
 
 .identity-flow[hidden] { display: none; }
@@ -311,6 +333,21 @@ button.identity-choice { width: 100%; }
   .identity-first-task-grid { grid-template-columns: 1fr; }
   .bill-person { grid-template-columns: 1fr; }
   .bill-person input { min-height: 44px; }
+  .bill-review-mobile { padding: 14px; }
+  .bill-review-mobile > header h2 { overflow-wrap: anywhere; }
+  .bill-review-mobile .bill-fields { gap: 9px; }
+  .bill-review-mobile .bill-line { margin-top: 5px; padding: 12px; background: var(--surface-strong); border: 1px solid var(--border); border-radius: 12px; }
+  .bill-review-mobile .bill-line + .bill-line { margin-top: 9px; }
+  .bill-review-mobile .bill-person,
+  .bill-review .bill-person { grid-template-columns: minmax(0, 1fr) minmax(84px, 96px) 22px auto; gap: 7px 9px; padding: 8px 0; }
+  .bill-review-mobile .bill-person > input[type='number'],
+  .bill-review .bill-person > input[type='number'] { min-height: 42px; }
+  .bill-review-mobile .bill-exempt-control { grid-column: 1 / -1; min-height: 28px; }
+  .bill-review-mobile .bill-exempt-control input { min-height: 22px; }
+  .bill-review-mobile .bill-person > input[type='checkbox'],
+  .bill-review .bill-person > input[type='checkbox'] { min-height: 22px; }
+  .bill-review-mobile footer { position: sticky; bottom: -14px; margin: 9px -14px -14px; padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--surface) 94%, transparent); border-top: 1px solid var(--border); backdrop-filter: blur(8px); }
+  .bill-review-mobile footer button { width: 100%; min-height: 48px; }
   .expenses-route { gap: 24px; }
   .expenses-route-header { align-items: flex-start; }
   .expense-summary-grid article { min-height: 108px; padding: 15px; }
@@ -341,6 +378,8 @@ button.identity-choice { width: 100%; }
   .expense-balance-row button { grid-column: 2 / 4; width: 100%; }
   .expense-history-item summary { gap: 10px; padding-inline: 14px; }
   .expense-share-list { padding-inline: 24px 14px; }
+  .expense-recorded-banner { display: grid; gap: 10px; }
+  .expense-recorded-banner > span { justify-items: start; text-align: left; }
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -1761,15 +1800,18 @@ dialog::backdrop { background: rgba(44, 41, 37, 0.44); }
   .offline-banner {
     gap: 10px;
     justify-content: space-between;
-    padding: 7px 12px;
+    padding: 6px 10px;
     font-size: 0.66rem;
+    line-height: 1.35;
   }
-  .offline-banner button { flex: 0 0 auto; min-height: 44px; }
+  .offline-banner button { flex: 0 0 auto; min-height: 40px; }
 
   .conversation-shell {
     grid-template-rows: minmax(0, 1fr) 82px;
     overflow: hidden;
   }
+
+  .conversation-workspace { grid-row: 1; }
 
   .route-page { padding: 24px 16px; }
   .route-page-header { display: grid; gap: 18px; align-items: start; }
@@ -1852,7 +1894,7 @@ dialog::backdrop { background: rgba(44, 41, 37, 0.44); }
     min-width: 0;
     max-width: 100%;
     height: 82px;
-    padding: 9px 14px;
+    padding: 9px 14px calc(9px + env(safe-area-inset-bottom));
     overflow: hidden;
   }
 
@@ -1909,7 +1951,7 @@ dialog::backdrop { background: rgba(44, 41, 37, 0.44); }
   }
 
   .context-panel {
-    width: min(348px, calc(100vw - 42px));
+    width: min(348px, 94vw);
     padding: 22px 18px;
   }
 
@@ -1935,6 +1977,10 @@ dialog::backdrop { background: rgba(44, 41, 37, 0.44); }
     background: transparent;
     border: 1px solid transparent;
     border-radius: 8px;
+  }
+
+  .mobile-bottom-nav [data-open-context] {
+    color: var(--ink);
   }
 
   .mobile-bottom-nav button.active {

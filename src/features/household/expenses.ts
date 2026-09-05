@@ -215,7 +215,11 @@ function timestampLabel(micros: bigint): string {
 
 export function renderExpenseBalances(
   projection: ExpenseBalanceProjection,
-  options: { online: boolean; currentIdentity?: string } = { online: true },
+  options: {
+    online: boolean;
+    currentIdentity?: string;
+    recentlyRecorded?: { title: string; amountPaise: bigint; ownSharePaise?: bigint };
+  } = { online: true },
 ): string {
   const currentIdentity = options.currentIdentity ?? projection.currentIdentity;
   const summary = projection.summary;
@@ -235,7 +239,7 @@ export function renderExpenseBalances(
     : '<div class="expenses-zero"><strong>Nothing to settle</strong><p>Everyone is square for recorded expenses.</p></div>';
 
   const history = projection.history.length
-    ? projection.history.map((item, index) => `<details class="expense-history-item" data-expense-id="${item.id}" ${index === 0 ? 'open' : ''}>
+    ? projection.history.map((item, index) => `<details class="expense-history-item${index === 0 ? ' is-latest' : ''}" data-expense-id="${item.id}" ${index === 0 ? 'open' : ''}>
       <summary>
         <span><strong>${escapeHouseholdHtml(item.title)}</strong><small>${escapeHouseholdHtml(expenseDateLabel(item))} · Paid by ${escapeHouseholdHtml(item.payerName)} · ${escapeHouseholdHtml(splitMethodLabel(item.splitMethod))}</small></span>
         <span><strong>${moneyLabel(item.amountPaise)}</strong><small>${item.settled ? 'Settled' : 'Open'}</small></span>
@@ -254,16 +258,22 @@ export function renderExpenseBalances(
     </article>`).join('')}</div></section>`
     : '';
 
+  const recorded = options.recentlyRecorded;
+  const successBanner = recorded
+    ? `<section class="expense-recorded-banner" role="status"><div><p class="eyebrow">RECORDED</p><h2>Expense recorded</h2><p><strong>${escapeHouseholdHtml(recorded.title)}</strong> · ${moneyLabel(recorded.amountPaise)} added to the shared ledger.</p></div>${recorded.ownSharePaise !== undefined ? `<span><small>Your share</small><strong>${moneyLabel(recorded.ownSharePaise)}</strong></span>` : ''}</section>`
+    : '';
+
   return `<section class="expenses-route" data-household-route="expenses">
-    <header class="expenses-route-header"><div><p class="eyebrow">SHARED HOUSEHOLD</p><h1>Expenses &amp; balances</h1><p>Bill review is a preview. Balances change only after recording succeeds.</p></div><button type="button" data-route="conversations">Add expense</button></header>
+    <header class="expenses-route-header"><div><p class="eyebrow">SHARED HOUSEHOLD</p><h1>Expenses &amp; balances</h1><p>${recorded ? 'Balances are live and reflect recorded household expenses.' : 'Review a bill before recording it. Balances update after it is saved.'}</p></div><button type="button" data-route="conversations">${recorded ? 'Add another' : 'Add expense'}</button></header>
     ${options.online ? '' : '<p class="expenses-offline" role="status">Offline · shared balance actions are paused. Reconnect to settle up.</p>'}
+    ${successBanner}
     <div class="expense-summary-grid">
       <article><span>You owe</span><strong>${moneyLabel(summary.youOwePaise)}</strong></article>
       <article><span>You are owed</span><strong>${moneyLabel(summary.youAreOwedPaise)}</strong></article>
       <article><span>Net balance</span><strong>${moneyLabel(summary.netPaise)}</strong><small>${summary.netPaise < 0n ? 'You owe more than you are owed' : summary.netPaise > 0n ? 'You are owed more than you owe' : 'All square'}</small></article>
     </div>
-    <section class="expense-section"><header><p class="eyebrow">OPEN BALANCES</p><h2>Who owes whom</h2></header><div class="expense-balance-list">${balances}</div></section>
     <section class="expense-section"><header><p class="eyebrow">HOUSEHOLD LEDGER</p><h2>Recent expenses</h2></header><div class="expense-history-list">${history}</div></section>
+    <section class="expense-section"><header><p class="eyebrow">OPEN BALANCES</p><h2>Who owes whom</h2></header><div class="expense-balance-list">${balances}</div></section>
     ${settlementActivity}
   </section>`;
 }

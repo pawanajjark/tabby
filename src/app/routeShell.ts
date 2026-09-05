@@ -1,11 +1,14 @@
 import type { AppRoute } from './store';
 
 export function routeNavigation(className: string) {
+  const isMobile = className.includes('mobile-bottom-nav');
   return `<nav class="${className}" aria-label="Primary navigation">
-    <button type="button" data-route="conversations">Conversations</button>
+    <button type="button" data-route="conversations">${isMobile ? 'Chat' : 'Conversations'}</button>
     <button type="button" data-route="pantry">Pantry</button>
     <button type="button" data-route="expenses">Expenses</button>
-    <button type="button" data-route="home">Home shelf</button>
+    ${isMobile
+      ? '<button type="button" data-open-context aria-controls="context-panel">More</button>'
+      : '<button type="button" data-route="home">Home shelf</button>'}
   </nav>`;
 }
 

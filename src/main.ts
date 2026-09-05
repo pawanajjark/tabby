@@ -1306,7 +1306,7 @@ function renderContextPanel() {
         <span>${escapeHtml(item.name)}</span>
         <div class="pantry-actions">
           <strong>${item.quantity} ${escapeHtml(item.unit)}</strong>
-          <button type="button" class="pantry-item-del" data-remove-pantry="${escapeHtml(item.id)}" data-shared-action title="Remove item" ${!deletionAvailable || !/^\d+$/.test(item.id) ? 'disabled' : ''}>×</button>
+          <button type="button" class="pantry-item-del" data-remove-pantry="${escapeHtml(item.id)}" data-shared-action aria-label="Remove ${escapeHtml(item.name)}" title="Remove item" ${!deletionAvailable || !/^\d+$/.test(item.id) ? 'disabled' : ''}>×</button>
         </div>
       </div>`).join('')
     : '<p class="empty-state">The kitchen is empty. Add an item here or ask Pantry to save what you bought.</p>';
@@ -1318,7 +1318,7 @@ function renderContextPanel() {
       <div class="rule-row">
         <div class="rule-row-header">
           <span class="rule-badge ${rule.ruleType}">${rule.ruleType}</span>
-          <button type="button" class="pantry-item-del" data-remove-rule="${escapeHtml(rule.id)}" data-shared-action title="Delete rule" ${!deletionAvailable || !/^\d+$/.test(rule.id) ? 'disabled' : ''}>×</button>
+          <button type="button" class="pantry-item-del" data-remove-rule="${escapeHtml(rule.id)}" data-shared-action aria-label="Delete ${escapeHtml(rule.title)}" title="Delete rule" ${!deletionAvailable || !/^\d+$/.test(rule.id) ? 'disabled' : ''}>×</button>
         </div>
         <div class="rule-title">${escapeHtml(rule.title)}</div>
         ${rule.description ? `<small style="color: var(--muted);">${escapeHtml(rule.description)}</small>` : ''}
@@ -1452,7 +1452,14 @@ function renderExpensesRoute() {
     })),
   });
   const shared = currentSharedAvailability();
-  target.innerHTML = renderExpenseBalances(projection, { online: shared.available, currentIdentity });
+  const recentlyRecorded = currentBillPhase.step === 'recorded' && currentSplit
+    ? {
+      title: currentSplit.billTitle,
+      amountPaise: currentSplit.totalAmountPaise,
+      ownSharePaise: currentBillDraft?.lines.reduce((total, line) => total + (line.allocations.find(allocation => allocation.member.identity.toHexString() === currentIdentity)?.amountPaise ?? 0n), 0n),
+    }
+    : undefined;
+  target.innerHTML = renderExpenseBalances(projection, { online: shared.available, currentIdentity, recentlyRecorded });
   target.querySelectorAll<HTMLButtonElement>('[data-route="conversations"]').forEach(button => {
     button.addEventListener('click', () => navigateTo('conversations'));
   });
@@ -1896,6 +1903,7 @@ function bindMessageActions() {
       });
       if (result.status === 'acknowledged') {
         button.textContent = 'Recorded';
+        currentBillPhase = billRecordingAcknowledged(0n);
         showToast('The household expense was recorded.');
       } else {
         button.textContent = 'Record household expense';
@@ -2997,6 +3005,10 @@ const drawerController = installDrawerController({
 function setContextOpen(open: boolean) {
   drawerController.setOpen(open);
 }
+
+document.querySelector<HTMLButtonElement>('[data-open-context]')?.addEventListener('click', () => {
+  setContextOpen(true);
+});
 
 document.querySelector<HTMLFormElement>('#quick-rule-form')?.addEventListener('submit', async event => {
   event.preventDefault();

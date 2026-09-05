@@ -217,9 +217,9 @@ export function renderBillReview(draft: BillDraft, online: boolean, phase: BillR
   const lines = draft.lines.map(line => `<article class="bill-line" data-line-id="${escapeHouseholdHtml(line.id)}">
     <header><h3>${escapeHouseholdHtml(line.label)}</h3><strong>${paiseLabel(line.amountPaise)}</strong></header>
     <div class="bill-line-allocations">${line.allocations.map(allocation => `<label class="bill-person ${allocation.exempt ? 'is-exempt' : ''}">
-      <span>${escapeHouseholdHtml(allocation.member.displayName)}</span>
+      <span class="bill-person-name">${escapeHouseholdHtml(allocation.member.displayName)}</span>
       <input type="number" data-allocation-member="${escapeHouseholdHtml(allocation.member.identity.toHexString())}" value="${allocation.amountPaise}" ${allocation.exempt || locked ? 'disabled' : ''} />
-      <input type="checkbox" data-allocation-exempt ${allocation.exempt ? 'checked' : ''} ${locked ? 'disabled' : ''} /> Exempt
+      <span class="bill-exempt-control"><input type="checkbox" data-allocation-exempt ${allocation.exempt ? 'checked' : ''} ${locked ? 'disabled' : ''} /><span>Exempt</span></span>
     </label>`).join('')}</div>
   </article>`).join('');
   return `<section class="bill-review ${mobile ? 'bill-review-mobile' : 'bill-review-desktop'} ${online ? '' : 'is-offline'}" data-bill-review>
