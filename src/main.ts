@@ -1521,12 +1521,13 @@ async function publishSharedFacts(facts: MemoryFact[]): Promise<number> {
 function renderShoppingPlan(plan: Awaited<ReturnType<typeof AgentShopping.generateShoppingPlan>>) {
   const items = plan.items.slice(0, 8);
   const listId = crypto.randomUUID();
-  currentShoppingLists.set(listId, items.map(item => ({
+  const shoppingItems = items.map(item => ({
     name: item.itemName,
     quantity: item.suggestedQuantity,
     unit: item.unit,
     inPantry: false,
-  })));
+  }));
+  currentShoppingLists.set(listId, shoppingItems);
   return `
     <div class="agent-result">
       <div class="result-heading"><h3>Restock plan</h3><span>${items.length} suggestions</span></div>
@@ -1538,8 +1539,18 @@ function renderShoppingPlan(plan: Awaited<ReturnType<typeof AgentShopping.genera
             <div class="row-action"><span>${item.suggestedQuantity} ${escapeHtml(item.unit)}</span><button data-add-pantry="${escapeHtml(item.itemName)}" data-quantity="${item.suggestedQuantity}" data-unit="${escapeHtml(item.unit)}">Add</button></div>
           </div>`).join('')}
       </div>
-      ${items.length ? `<button class="instamart-button shopping-checkout" data-shop-list="${escapeHtml(listId)}">Checkout groceries</button>` : ''}
+      ${items.length ? `<button class="instamart-button shopping-checkout" data-shop-list="${escapeHtml(listId)}" data-shop-items="${encodeActionPayload(shoppingItems)}">Checkout groceries</button>` : ''}
     </div>`;
+}
+
+function encodeActionPayload(value: unknown): string {
+  return escapeHtml(encodeURIComponent(JSON.stringify(value)));
+}
+
+function decodeActionPayload<T>(value?: string): T | undefined {
+  if (!value) return undefined;
+  try { return JSON.parse(decodeURIComponent(value)) as T; }
+  catch { return undefined; }
 }
 
 async function checkoutVisibleGroceries(button: HTMLButtonElement, ingredients: RecipeIngredient[]): Promise<void> {
@@ -1672,7 +1683,7 @@ function renderCookingPlan(plan: Awaited<ReturnType<typeof AgentCooking.generate
             ? items.map(ingredient => `<li><span>${escapeHtml(ingredient.name)}</span><small>${escapeHtml(`${ingredient.quantity ?? ''} ${ingredient.unit ?? ''}`.trim())}</small></li>`).join('')
             : `<li class="recipe-empty">${empty}</li>`;
           return `
-            <article class="recipe-card">
+            <article class="recipe-card" data-recipe-payload="${encodeActionPayload(recipe)}">
               <div class="recipe-meta"><span>${recipe.prepTimeMinutes + recipe.cookTimeMinutes} min · ${recipe.servings} serving${recipe.servings === 1 ? '' : 's'}</span><span>${toBuy.length} to buy</span></div>
               <h4>${escapeHtml(recipe.title)}</h4>
               <p>${escapeHtml(recipe.description)}</p>
@@ -1951,8 +1962,13 @@ async function recordCurrentBill() {
 function bindMessageActions() {
   const shared = currentSharedAvailability();
   document.querySelectorAll<HTMLButtonElement>('[data-shop-list]').forEach(button => {
+    button.disabled = !shared.available;
+    button.setAttribute('aria-disabled', String(!shared.available));
+    if (!shared.available) button.title = shared.reason || 'Choose a synchronized home before checking out.';
+    else button.removeAttribute('title');
     button.onclick = () => {
-      const items = currentShoppingLists.get(button.dataset.shopList || '');
+      const items = decodeActionPayload<RecipeIngredient[]>(button.dataset.shopItems)
+        ?? currentShoppingLists.get(button.dataset.shopList || '');
       if (items?.length) void checkoutVisibleGroceries(button, items);
     };
   });
@@ -1983,7 +1999,9 @@ function bindMessageActions() {
     button.disabled = !shared.available;
     button.setAttribute('aria-disabled', String(!shared.available));
     button.onclick = async () => {
-      const recipe = currentRecipes.get(button.dataset.cookRecipe!);
+      const host = button.closest<HTMLElement>('.recipe-card') || button.parentElement;
+      const recipe = decodeActionPayload<Recipe>(host?.dataset.recipePayload)
+        ?? currentRecipes.get(button.dataset.cookRecipe!);
       if (!recipe) return;
       const toBuy = recipe.ingredients.filter(item => !item.inPantry);
       const pantry = pantryData();
@@ -1995,7 +2013,6 @@ function bindMessageActions() {
         });
         return match && match.quantity > 0 ? [{ name: match.name, quantityUsed: 1, unit: match.unit }] : [];
       });
-      const host = button.closest<HTMLElement>('.recipe-card') || button.parentElement;
       host?.querySelector<HTMLElement>('[data-cooking-workflow]')?.remove();
       cookingConfirmation = changes.length ? createCookingConfirmation(recipe.title, changes) : null;
       const pantryStep = cookingConfirmation
@@ -2031,7 +2048,9 @@ function bindMessageActions() {
 
   document.querySelectorAll<HTMLButtonElement>('[data-shop-recipe]').forEach(button => {
     button.onclick = async () => {
-      const recipe = currentRecipes.get(button.dataset.shopRecipe!);
+      const host = button.closest<HTMLElement>('.recipe-card') || button.parentElement;
+      const recipe = decodeActionPayload<Recipe>(host?.dataset.recipePayload)
+        ?? currentRecipes.get(button.dataset.shopRecipe!);
       if (!recipe) return;
       await checkoutVisibleGroceries(button, recipe.ingredients);
     };
