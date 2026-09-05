@@ -36,6 +36,7 @@
 
 /* Accepted feature composition */
 .conversation-workspace {
+  grid-row: 2;
   min-height: 0;
   display: block;
   flex: 1;
@@ -1051,7 +1052,7 @@ summary:focus-visible {
 .composer-zone {
   position: relative;
   z-index: 2;
-  grid-row: 2;
+  grid-row: 3;
   padding: 10px clamp(22px, 6vw, 72px) 12px;
   background: var(--oat);
   border-top: 1px solid rgba(217, 209, 195, 0.74);
