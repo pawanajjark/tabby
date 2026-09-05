@@ -467,7 +467,7 @@ export const set_ai_config = spacetimedb.reducer(
   { api_key: t.string(), model: t.string() },
   (ctx, { api_key, model }) => {
     const key = api_key.trim();
-    const selectedModel = model.trim() || 'gpt-4o-mini';
+    const selectedModel = model.trim() || 'gpt-5.6-sol';
     if (!key) {
       const current = ctx.db.aiConfig.owner.find(ctx.sender);
       if (current) ctx.db.aiConfig.owner.delete(ctx.sender);
@@ -655,14 +655,15 @@ export const run_ai = spacetimedb.procedure(
       messages.push({ role: 'user', content: prompt });
     }
 
+    const requestModel = config.model || 'gpt-5.6-sol';
     const requestBody: Record<string, unknown> = {
-      model: config.model || 'gpt-4o-mini',
+      model: requestModel,
       messages,
       max_tokens: 1800,
     };
     if (args.json_mode) requestBody.response_format = { type: 'json_object' };
 
-    const response = ctx.http.fetch('https://api.openai.com/v1/chat/completions', {
+    let response = ctx.http.fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -671,6 +672,21 @@ export const run_ai = spacetimedb.procedure(
       body: JSON.stringify(requestBody),
       timeout: TimeDuration.fromMillis(45_000),
     });
+
+    if (response.status < 200 || response.status >= 300) {
+      if (requestModel !== 'gpt-4o-mini' && (response.status === 404 || response.status === 400)) {
+        requestBody.model = 'gpt-4o-mini';
+        response = ctx.http.fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${config.api_key}`,
+          },
+          body: JSON.stringify(requestBody),
+          timeout: TimeDuration.fromMillis(45_000),
+        });
+      }
+    }
 
     if (response.status < 200 || response.status >= 300) {
       throw new SenderError(`OpenAI request failed with status ${response.status}.`);

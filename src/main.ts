@@ -244,7 +244,7 @@ app.innerHTML = `
       </div>
       <div id="ai-status-indicator" class="ai-status-badge"></div>
       <label>OpenAI API key<input id="ai-key" type="password" autocomplete="off" placeholder="Enter a key to connect OpenAI" /></label>
-      <label>Model<input id="ai-model" autocomplete="off" placeholder="gpt-4o-mini" /></label>
+      <label>Model<input id="ai-model" autocomplete="off" placeholder="gpt-5.6-sol" /></label>
       <div class="dialog-actions">
         <button type="button" id="disconnect-ai" class="secondary-button danger-button" style="margin-right: auto;" hidden>Disconnect</button>
         <button type="button" id="reset-tabby-db" class="secondary-button danger-button" style="margin-right: auto;">Reset DB data</button>
@@ -1109,7 +1109,7 @@ function syncAiStatus() {
   const directKey = AIProvider.getApiKey();
   const isBackendConfigured = Boolean(status?.configured);
   const isBackendVerified = Boolean(status?.verified);
-  const modelName = status?.model || AIProvider.getModelName() || 'gpt-4o-mini';
+  const modelName = status?.model || AIProvider.getModelName() || (import.meta.env.VITE_OPENAI_MODEL as string | undefined)?.trim() || 'gpt-5.6-sol';
 
   if (isConnected && directKey && !isBackendConfigured) {
     try {
@@ -1375,7 +1375,7 @@ function showAiDialog() {
   const hasKey = AIProvider.hasApiKey();
   keyInput.value = '';
   keyInput.placeholder = hasKey ? '•••••••• (Enter a new key to replace)' : 'Enter a key to connect OpenAI (sk-...)';
-  modelInput.value = AIProvider.getModelName() || 'gpt-4o-mini';
+  modelInput.value = AIProvider.getModelName() || (import.meta.env.VITE_OPENAI_MODEL as string | undefined)?.trim() || 'gpt-5.6-sol';
 
   if (statusBadge) {
     statusBadge.textContent = hasKey
@@ -1399,7 +1399,7 @@ document.querySelector<HTMLFormElement>('#ai-form')!.addEventListener('submit', 
   const keyInput = document.querySelector<HTMLInputElement>('#ai-key')!;
   const modelInput = document.querySelector<HTMLInputElement>('#ai-model')!;
   const inputKey = keyInput.value.trim();
-  const model = modelInput.value.trim() || 'gpt-4o-mini';
+  const model = modelInput.value.trim() || AIProvider.getModelName() || (import.meta.env.VITE_OPENAI_MODEL as string | undefined)?.trim() || 'gpt-5.6-sol';
 
   const prevKey = AIProvider.getApiKey();
   const prevModel = AIProvider.getModelName();

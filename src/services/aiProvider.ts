@@ -14,8 +14,8 @@ type BackendAIRunner = (request: BackendAIRequest) => Promise<string>;
 
 function sanitizeModel(model?: string): string {
   const clean = model?.trim();
-  if (!clean || clean === 'gpt-5.6-sol' || clean === 'gpt-4.1-mini') {
-    return 'gpt-4o-mini';
+  if (!clean) {
+    return (import.meta.env.VITE_OPENAI_MODEL as string | undefined)?.trim() || 'gpt-5.6-sol';
   }
   return clean;
 }
@@ -122,7 +122,7 @@ export class AIProvider {
       requestBody.response_format = { type: 'json_object' };
     }
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    let response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -130,6 +130,24 @@ export class AIProvider {
       },
       body: JSON.stringify(requestBody),
     });
+
+    // If custom model returns 404/model_not_found, try automatic fallback to gpt-4o-mini
+    if (!response.ok && (response.status === 404 || response.status === 400) && model !== 'gpt-4o-mini') {
+      const errorData = await response.json().catch(() => ({}));
+      const message = (errorData as { error?: { message?: string } })?.error?.message || '';
+      if (message.toLowerCase().includes('model') || response.status === 404) {
+        console.warn(`Model ${model} unavailable, falling back to gpt-4o-mini...`);
+        requestBody.model = 'gpt-4o-mini';
+        response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${key}`,
+          },
+          body: JSON.stringify(requestBody),
+        });
+      }
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
