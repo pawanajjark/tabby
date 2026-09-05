@@ -34,189 +34,192 @@ interface ConversationMessage {
 const app = document.querySelector<HTMLDivElement>('#app')!;
 
 app.innerHTML = `
-  <main class="app-frame">
-    <aside class="command-rail" aria-label="Tabby controls">
-      <div class="brand-block">
+  <main class="app-frame household-workspace">
+    <header class="command-rail top-bar" aria-label="Tabby household workspace">
+      <div class="brand-block top-bar-brand">
         <div class="wordmark">tabby</div>
-        <p>One conversation for a well-run home.</p>
+        <p>Home, handled.</p>
       </div>
 
-      <div class="rail-card" id="rail-user-card">
-        <div class="rail-card-header">
-          <div class="rail-card-title">
-            <span class="rail-avatar" id="rail-user-avatar">S</span>
-            <div>
-              <div class="rail-card-name" id="rail-user-name">Sam</div>
-              <div class="rail-card-sub" id="rail-user-phone">+91 98765 43210</div>
-            </div>
-          </div>
-        </div>
-        <button type="button" class="rail-card-btn" id="open-login-dialog">Switch user / Login</button>
+      <div class="rail-card home-switcher" id="rail-flat-card">
+        <button type="button" class="header-pill-badge home-switcher-button rail-card-header" id="header-flat-badge" title="Choose a home">
+          <span class="rail-label">HOME</span>
+          <span class="home-switcher-copy rail-card-title">
+            <span class="rail-card-name" id="rail-flat-name">Sunshine Haven</span>
+            <span class="rail-card-sub" id="rail-residence-name">Flat 402, Palm Grove Residency</span>
+          </span>
+          <span class="sr-only" id="header-flat-text">Sunshine Haven · Flat 402</span>
+        </button>
       </div>
 
-      <div class="rail-card" id="rail-flat-card">
-        <div class="rail-card-header">
-          <div class="rail-card-title">
-            <span style="font-size:1.15rem">🏢</span>
-            <div>
-              <div class="rail-card-name" id="rail-flat-name">Flat 402 · Sunshine Haven</div>
-              <div class="rail-card-sub" id="rail-residence-name">Palm Grove Residency</div>
-            </div>
-          </div>
-        </div>
-        <button type="button" class="rail-card-btn" id="open-onboard-dialog">🏢 Switch flat / Onboard</button>
+      <div class="pantry-status" aria-label="Pantry connection status">
+        <span class="rail-label">PANTRY</span>
+        <p class="connection-status"><span class="status-dot offline"></span><span id="status-text">Pantry is connecting</span></p>
       </div>
 
-      <div class="routing-guide">
-        <p class="rail-label">How it works</p>
-        <ol>
-          <li><span>01</span>Ask naturally</li>
-          <li><span>02</span>Tabby routes the work</li>
-          <li><span>03</span>Get the result here</li>
-        </ol>
+      <nav class="routing-guide top-bar-navigation" aria-label="Primary navigation">
+        <span class="top-bar-link active" aria-current="page">Conversations</span>
+        <button type="button" class="context-toggle top-bar-link" id="context-toggle" aria-expanded="false" aria-controls="context-panel"><span class="context-long">Home shelf</span><span class="context-short">Shelf</span></button>
+      </nav>
+
+      <div class="rail-card account-switcher" id="rail-user-card">
+        <button type="button" class="header-pill-badge user-pill account-switcher-button rail-card-header" id="header-user-badge" title="Switch account">
+          <span class="rail-avatar" id="rail-user-avatar">S</span>
+          <span class="account-switcher-copy rail-card-title">
+            <span class="rail-card-name" id="rail-user-name">Sam</span>
+            <span class="rail-card-sub" id="rail-user-phone">+91 98765 43210</span>
+          </span>
+          <span class="sr-only" id="header-user-text">Sam</span>
+        </button>
       </div>
 
-      <div class="rail-actions">
-        <label class="conversation-picker-label" for="conversation-picker">Conversation</label>
-        <select id="conversation-picker" aria-label="Choose conversation"></select>
-        <button class="quiet-button" id="new-conversation">New conversation</button>
-        <button class="quiet-button" id="open-profile">Household profile</button>
-        <button class="quiet-button" id="open-ai-settings">AI settings</button>
-      </div>
-    </aside>
+      <button type="button" class="quiet-button settings-trigger rail-card-btn" id="open-ai-settings">Settings</button>
+    </header>
 
     <section class="conversation-shell">
-      <header class="conversation-header">
-        <div>
-          <h1>Home conversation</h1>
-          <p class="connection-status"><span class="status-dot offline"></span><span id="status-text">Connecting to your home</span></p>
+      <header class="conversation-header conversation-toolbar">
+        <div class="conversation-title-group">
+          <p class="conversation-picker-label">PRIVATE TO YOU</p>
+          <h1>Conversations</h1>
         </div>
-        <div class="header-actions">
-          <button class="header-pill-badge" id="header-flat-badge" title="Click to switch flat or onboard">🏢 <span id="header-flat-text">Palm Grove · Flat 402</span></button>
-          <button class="header-pill-badge user-pill" id="header-user-badge" title="Click to switch user or login">👤 <span id="header-user-text">Sam</span></button>
+        <div class="header-actions conversation-actions rail-actions">
+          <label class="sr-only" for="conversation-picker">Choose conversation</label>
+          <select id="conversation-picker" aria-label="Choose conversation"></select>
+          <button type="button" class="quiet-button" id="new-conversation">New conversation</button>
           <div class="route-status idle" id="route-status" aria-live="polite">
             <span class="route-signal"></span>
             <span id="route-label">Ready</span>
           </div>
-          <button class="context-toggle" id="context-toggle" aria-expanded="false" aria-controls="context-panel"><span class="context-long">House context</span><span class="context-short">Context</span></button>
         </div>
       </header>
 
-      <div class="conversation" id="conversation" aria-live="polite"></div>
+      <div class="conversation conversation-transcript" id="conversation" aria-live="polite"></div>
 
       <div class="composer-zone">
         <form class="composer" id="chat-form">
           <label class="sr-only" for="chat-input">Message Tabby</label>
-          <textarea id="chat-input" rows="1" maxlength="3000" placeholder="Ask about groceries, dinner, a bill, or your household..." required></textarea>
+          <textarea id="chat-input" rows="1" maxlength="3000" placeholder="Message Tabby" required></textarea>
           <div class="composer-footer">
             <div class="attachment-group">
-              <label class="attachment-button" for="receipt-input">Attach receipt</label>
+              <label class="attachment-button" for="receipt-input">Add receipt</label>
               <input id="receipt-input" type="file" accept="image/png,image/jpeg,image/webp" />
               <span id="attachment-name"></span>
             </div>
             <button class="send-button" type="submit">Send</button>
           </div>
         </form>
-        <p class="privacy-note">Personal chat is not shared with roommates. Only explicit household preferences enter shared context.</p>
+        <p class="privacy-note">Private chat. Only items you explicitly save appear in the Home shelf.</p>
       </div>
     </section>
 
-    <aside class="context-panel" id="context-panel" aria-label="House context">
+    <aside class="context-panel home-shelf" id="context-panel" aria-label="Home shelf">
       <div class="context-header">
         <div>
-          <h2>House context</h2>
-          <p>Useful facts, not private conversations.</p>
+          <h2>Home shelf</h2>
+          <p>Shared household details, separate from private conversations.</p>
         </div>
-        <button class="context-close" id="context-close" aria-label="Close house context">Close</button>
+        <button class="context-close" id="context-close" aria-label="Close Home shelf">Close</button>
       </div>
       <div class="mobile-context-actions">
-        <button id="mobile-new-conversation">New chat</button>
-        <button id="mobile-profile">Profile</button>
-        <button id="mobile-ai-settings">AI settings</button>
+        <button id="mobile-new-conversation">New conversation</button>
+        <button id="mobile-profile">Your profile</button>
+        <button id="mobile-ai-settings">Settings</button>
       </div>
       <section class="context-section">
         <div class="section-heading"><h3>People</h3><span id="people-count">0</span></div>
         <div id="people-list" class="context-list"></div>
       </section>
       <section class="context-section">
-        <div class="section-heading"><h3>Shared memory</h3><span id="memory-count">0</span></div>
+        <div class="section-heading"><h3>HOME NOTES</h3><span id="memory-count">0</span></div>
         <div id="memory-list" class="context-list"></div>
       </section>
       <section class="context-section">
-        <div class="section-heading"><h3>Pantry now</h3><span id="pantry-count">0</span></div>
+        <div class="section-heading"><h3>PANTRY</h3><span id="pantry-count">0</span></div>
         <form id="quick-pantry-form" class="quick-pantry-form">
-          <input id="quick-pantry-name" placeholder="Quick add (e.g. Milk)" autocomplete="off" required />
+          <input id="quick-pantry-name" placeholder="Add an item, such as milk" autocomplete="off" required />
           <input id="quick-pantry-qty" type="number" min="1" value="1" />
-          <button type="submit" class="quick-add-btn">+ Add</button>
+          <button type="submit" class="quick-add-btn">Add</button>
         </form>
         <div id="pantry-list" class="context-list"></div>
       </section>
       <section class="context-section">
-        <div class="section-heading"><h3>Flat rules</h3><span id="rules-count">0</span></div>
+        <div class="section-heading"><h3>KITCHEN</h3><span id="rules-count">0</span></div>
         <form id="quick-rule-form" class="quick-rule-form">
           <select id="quick-rule-type">
-            <option value="explicit">Explicit</option>
-            <option value="implicit">Implicit</option>
+            <option value="explicit">Agreed</option>
+            <option value="implicit">Usual</option>
           </select>
-          <input id="quick-rule-title" placeholder="Rule (e.g. Quiet after 11 PM)" autocomplete="off" required />
-          <button type="submit" class="quick-add-btn">+ Add</button>
+          <input id="quick-rule-title" placeholder="Add a house agreement" autocomplete="off" required />
+          <button type="submit" class="quick-add-btn">Add</button>
         </form>
         <div id="rules-list" class="context-list"></div>
       </section>
     </aside>
   </main>
 
-  <dialog id="login-dialog">
-    <form id="login-form" class="settings-form">
+  <dialog id="login-dialog" class="onboarding-dialog welcome-screen">
+    <form id="login-form" class="settings-form onboarding-screen">
       <div class="dialog-heading">
-        <div><h2>User Login</h2><p>Sign in with your phone and dummy OTP (1111).</p></div>
+        <div><p class="conversation-picker-label">WELCOME TO TABBY</p><h2>Run your home from one conversation.</h2><p>Groceries, meals, bills, notes, and house decisions stay in one place.</p></div>
         <button type="button" class="dialog-close" data-close-dialog="login-dialog">Close</button>
       </div>
-      <button type="button" id="fill-sam-demo" class="quick-demo-btn">✨ Fill Demo: Sam (OTP: 1111)</button>
-      <label>Full name<input id="login-name" value="Sam" placeholder="Your name (e.g. Sam)" required /></label>
+      <div class="welcome-home-actions" aria-label="Set up a home">
+        <button type="button" class="primary-button welcome-home-action create-home-action">Create a home</button>
+        <button type="button" class="secondary-button welcome-home-action join-home-action">Join a home</button>
+      </div>
+      <p class="returning-user-copy">Returning to Tabby? Sign in below.</p>
+      <div class="onboarding-section-heading"><span>PRIVATE SETUP</span><strong>Your profile</strong></div>
+      <button type="button" id="fill-sam-demo" class="quick-demo-btn">Use Sam demo details (code 1111)</button>
+      <label>Name<input id="login-name" value="Sam" placeholder="Your name" required /></label>
       <label>Phone number<input id="login-phone" value="+91 98765 43210" placeholder="+91 98765 43210" required /></label>
       <div id="otp-group" style="display: grid; gap: 8px;">
-        <div class="otp-hint-banner">💡 Demo verification code is <strong>1111</strong></div>
-        <label>4-digit OTP<input id="login-otp" class="otp-input-field" placeholder="1111" value="1111" maxlength="4" autocomplete="one-time-code" required /></label>
+        <div class="otp-hint-banner">Demo verification code: <strong>1111</strong></div>
+        <label>Verification code<input id="login-otp" class="otp-input-field" placeholder="1111" value="1111" maxlength="4" autocomplete="one-time-code" required /></label>
       </div>
+      <p class="privacy-note">Your conversations stay private. Only items you explicitly save appear in the Home shelf.</p>
       <div class="dialog-actions">
         <button type="button" class="secondary-button" data-close-dialog="login-dialog">Cancel</button>
-        <button type="submit" class="primary-button" id="login-submit-btn">Verify & Log in</button>
+        <button type="submit" class="primary-button" id="login-submit-btn">Verify and continue</button>
       </div>
     </form>
   </dialog>
 
-  <dialog id="onboard-dialog">
-    <form id="onboard-form" class="settings-form">
+  <dialog id="onboard-dialog" class="onboarding-dialog home-setup-screen">
+    <form id="onboard-form" class="settings-form onboarding-screen">
       <div class="dialog-heading">
-        <div><h2>Join a Flat / Onboard</h2><p>Select or create your residence and flat to become a member.</p></div>
+        <div><p class="conversation-picker-label">STEP 2 OF 3 · CREATE OR JOIN</p><h2>Create a home or join a home</h2><p>Choose an existing home, or create one people will recognise.</p></div>
         <button type="button" class="dialog-close" data-close-dialog="onboard-dialog">Close</button>
       </div>
-      <label>Residence<select id="onboard-residence" class="dialog-select"></select></label>
+      <label>Home<select id="onboard-residence" class="dialog-select"></select></label>
       <div id="new-residence-group" class="nested-input-group" hidden>
-        <label>Residence name<input id="new-res-name" placeholder="e.g. Greenwood Heights" /></label>
-        <label>Address / Area<input id="new-res-address" placeholder="e.g. Bellandur, Bengaluru" /></label>
+        <label>Home name<input id="new-res-name" placeholder="Sunshine Haven" /></label>
+        <label>Area or building<input id="new-res-address" placeholder="Palm Grove Residency" /></label>
       </div>
-      <label>Flat<select id="onboard-flat" class="dialog-select"></select></label>
+      <label>Flat or address<select id="onboard-flat" class="dialog-select"></select></label>
       <div id="new-flat-group" class="nested-input-group" hidden>
-        <label>Flat number<input id="new-flat-num" placeholder="e.g. Flat 301" /></label>
-        <label>Flat nickname<input id="new-flat-name" placeholder="e.g. Sunshine Suite" /></label>
+        <label>Flat or address label<input id="new-flat-num" placeholder="Flat 402" /></label>
+        <label>Home nickname<input id="new-flat-name" placeholder="Sunshine Haven" /></label>
       </div>
-      <label>Your Member Display Name<input id="onboard-display-name" value="Sam" required /></label>
+      <label>Your name in this home<input id="onboard-display-name" value="Sam" required /></label>
+      <section class="onboarding-preview">
+        <p class="conversation-picker-label">STEP 3 OF 3 · INVITE AND BASICS</p>
+        <h3>Bring the house together</h3>
+        <p>Invite housemates and set optional basics later from the Home shelf.</p>
+      </section>
       <div class="dialog-actions">
         <button type="button" class="secondary-button" data-close-dialog="onboard-dialog">Cancel</button>
-        <button type="submit" class="primary-button" id="onboard-submit-btn">Join Flat</button>
+        <button type="submit" class="primary-button" id="onboard-submit-btn">Continue to Tabby</button>
       </div>
     </form>
   </dialog>
 
-  <dialog id="profile-dialog">
-    <form id="profile-form" class="settings-form">
+  <dialog id="profile-dialog" class="onboarding-dialog profile-screen">
+    <form id="profile-form" class="settings-form onboarding-screen">
       <div class="dialog-heading">
-        <div><h2>Household profile</h2><p>This helps every agent make safer, more relevant choices.</p></div>
+        <div><p class="conversation-picker-label">PRIVATE SETUP · STEP 1 OF 3</p><h2>Your profile</h2><p>Your name helps housemates recognise shared updates.</p></div>
         <button type="button" class="dialog-close" data-close-dialog="profile-dialog">Close</button>
       </div>
-      <label>Display name<input id="profile-name" autocomplete="name" required /></label>
+      <label>Name<input id="profile-name" autocomplete="name" required /></label>
       <fieldset>
         <legend>Dietary preferences</legend>
         <div class="choice-grid">
@@ -231,6 +234,7 @@ app.innerHTML = `
         </div>
       </fieldset>
       <label>Meals you cook often<input id="profile-habits" placeholder="Dal, pasta, stir-fry" /></label>
+      <p class="privacy-note">Your conversations stay private. Only items you explicitly save appear in the Home shelf.</p>
       <div class="dialog-actions">
         <button type="button" class="secondary-button" data-close-dialog="profile-dialog">Cancel</button>
         <button type="submit" class="primary-button">Save profile</button>
@@ -238,20 +242,46 @@ app.innerHTML = `
     </form>
   </dialog>
 
-  <dialog id="ai-dialog">
-    <form id="ai-form" class="settings-form">
+  <dialog id="ai-dialog" class="settings-board">
+    <form id="ai-form" class="settings-form settings-board-form">
       <div class="dialog-heading">
-        <div><h2>AI & Database settings</h2><p>Configure OpenAI connection or purge stale database state.</p></div>
+        <div><p class="conversation-picker-label">TABBY</p><h2>Settings and account</h2><p>Manage your profile, home, account, AI connection, and data.</p></div>
         <button type="button" class="dialog-close" data-close-dialog="ai-dialog">Close</button>
       </div>
-      <div id="ai-status-indicator" class="ai-status-badge"></div>
-      <label>OpenAI API key<input id="ai-key" type="password" autocomplete="off" placeholder="Enter a key to connect OpenAI" /></label>
-      <label>Model<input id="ai-model" autocomplete="off" placeholder="gpt-5.6-sol" /></label>
+      <div class="settings-grid">
+        <section class="settings-card profile-settings-card">
+          <h3>Your profile</h3>
+          <p>Update the name, dietary preferences, and cooking habits Tabby uses.</p>
+          <button type="button" class="secondary-button" id="open-profile">Edit profile</button>
+        </section>
+        <section class="settings-card home-settings-card">
+          <h3>Choose a home</h3>
+          <p>Switch homes, join an existing home, or create a new one.</p>
+          <button type="button" class="secondary-button" id="open-onboard-dialog">Choose a home</button>
+        </section>
+        <section class="settings-card account-settings-card">
+          <h3>Switch account</h3>
+          <p>Switching accounts keeps this home unchanged.</p>
+          <button type="button" class="secondary-button" id="open-login-dialog">Switch account</button>
+        </section>
+        <section class="settings-card ai-settings-card">
+          <h3>AI connection</h3>
+          <p>Optional connection. Core Tabby tools work without AI.</p>
+          <div id="ai-status-indicator" class="ai-status-badge"></div>
+          <label>OpenAI API key<input id="ai-key" type="password" autocomplete="off" placeholder="Enter a key to connect OpenAI" /></label>
+          <label>Model<input id="ai-model" autocomplete="off" placeholder="gpt-5.6-sol" /></label>
+          <button type="button" id="disconnect-ai" class="secondary-button danger-button" hidden>Disconnect AI</button>
+        </section>
+        <section class="settings-card danger-zone">
+          <p class="conversation-picker-label">DATA AND PRIVACY · DANGER ZONE</p>
+          <h3>Delete your Tabby data</h3>
+          <p>This permanently deletes pantry items, expenses, memories, conversations, and local household settings.</p>
+          <button type="button" id="reset-tabby-db" class="secondary-button danger-button">Delete your Tabby data</button>
+        </section>
+      </div>
       <div class="dialog-actions">
-        <button type="button" id="disconnect-ai" class="secondary-button danger-button" style="margin-right: auto;" hidden>Disconnect</button>
-        <button type="button" id="reset-tabby-db" class="secondary-button danger-button" style="margin-right: auto;">Reset DB data</button>
         <button type="button" class="secondary-button" data-close-dialog="ai-dialog">Cancel</button>
-        <button type="submit" class="primary-button">Save settings</button>
+        <button type="submit" class="primary-button">Save AI connection</button>
       </div>
     </form>
   </dialog>
@@ -295,7 +325,7 @@ const welcomeMessage: ConversationMessage = {
   id: 'welcome',
   role: 'assistant',
   agent: 'tabby',
-  text: 'Tell me what needs handling at home. I can plan groceries, find a meal from your pantry, split a bill, or answer a question from the household context.',
+  text: 'Run your home from one conversation. Tell me what needs handling, from a pantry check or dinner to a bill or Home note.',
 };
 
 function getLocalConversation(id: string): ConversationMessage[] {
@@ -386,10 +416,10 @@ function setRoute(intent: AgentIntent | 'idle', busy = false) {
   const labels: Record<typeof routeIntent, string> = {
     idle: 'Ready',
     general: 'Tabby',
-    grocery: 'Grocery',
-    chef: 'Chef',
-    billing: 'Billing',
-    context: 'Context',
+    grocery: 'Pantry',
+    chef: 'Kitchen',
+    billing: 'Bills',
+    context: 'Home notes',
   };
   status.className = `route-status ${intent} ${busy ? 'working' : ''}`;
   label.textContent = busy ? `${labels[intent]} working` : labels[intent];
@@ -491,7 +521,7 @@ function ensureConversation() {
     if (currentIdentity) localStorage.setItem(`tabby_active_conversation:${currentIdentity}`, id);
     localStorage.setItem('tabby_active_conversation_default', id);
     try {
-      connection.reducers.createConversation({ conversationId: id, title: 'Home conversation' });
+      connection.reducers.createConversation({ conversationId: id, title: 'New conversation' });
     } catch (err) {
       console.warn('createConversation notice:', err);
     }
@@ -508,8 +538,16 @@ function ensureConversation() {
 function renderConversation() {
   const target = document.querySelector<HTMLElement>('#conversation')!;
   target.innerHTML = conversation.map(message => {
+    const agentNames: Record<MessageAgent, string> = {
+      tabby: 'Tabby',
+      general: 'Tabby',
+      grocery: 'Pantry',
+      chef: 'Kitchen',
+      billing: 'Bills',
+      context: 'Home notes',
+    };
     const agentLabel = message.role === 'assistant'
-      ? `<span class="message-agent ${message.agent}">${message.agent === 'tabby' || message.agent === 'general' ? 'Tabby' : message.agent === 'context' ? 'House context' : formatCategory(message.agent)}</span>`
+      ? `<span class="message-agent ${message.agent}">${agentNames[message.agent]}</span>`
       : '';
     return `
       <article class="message ${message.role} ${message.pending ? 'pending' : ''}">
@@ -731,7 +769,7 @@ function deleteFlatRule(id: string) {
 }
 
 function clearAllTabbyData() {
-  if (!confirm('Are you sure you want to clear all data in Tabby database? This will reset all pantry items, expenses, memories, and conversations.')) {
+  if (!confirm('Delete your Tabby data? This removes pantry items, expenses, memories, conversations, and local household settings.')) {
     return;
   }
 
@@ -762,7 +800,7 @@ function clearAllTabbyData() {
   document.querySelector<HTMLDialogElement>('#ai-dialog')?.close();
   renderConversation();
   renderAll();
-  showToast('All database and local data has been purged.');
+  showToast('Your Tabby data was deleted.');
 }
 
 function renderContextPanel() {
@@ -791,7 +829,7 @@ function renderContextPanel() {
         <span class="memory-category">${escapeHtml(formatCategory(fact.category))}</span>
         <p><strong>${escapeHtml(fact.subjectName)}</strong> · ${escapeHtml(fact.value)}</p>
       </div>`).join('')
-    : '<p class="empty-state">No shared user insights yet. State a preference in chat to add one.</p>';
+    : '<p class="empty-state">Nothing saved yet. Ask Tabby to remember a shared Home note.</p>';
 
   document.querySelector('#pantry-list')!.innerHTML = pantry.length
     ? pantry.map(item => `
@@ -802,7 +840,7 @@ function renderContextPanel() {
           <button type="button" class="pantry-item-del" data-remove-pantry="${escapeHtml(item.name)}" title="Remove item">×</button>
         </div>
       </div>`).join('')
-    : '<p class="empty-state">The pantry is empty. Tell Grocery what you bought or add items above.</p>';
+    : '<p class="empty-state">The kitchen is empty. Add an item here or ask Pantry to save what you bought.</p>';
 
   document.querySelector('#rules-list')!.innerHTML = rules.length
     ? rules.map(rule => `
@@ -814,7 +852,7 @@ function renderContextPanel() {
         <div class="rule-title">${escapeHtml(rule.title)}</div>
         ${rule.description ? `<small style="color: var(--muted);">${escapeHtml(rule.description)}</small>` : ''}
       </div>`).join('')
-    : '<p class="empty-state">No flat rules yet. Add house rules above.</p>';
+    : '<p class="empty-state">No house agreements yet. Add an agreed or usual house rule above.</p>';
 
   document.querySelectorAll<HTMLButtonElement>('[data-remove-pantry]').forEach(btn => {
     btn.onclick = () => {
@@ -904,7 +942,7 @@ function renderCookingPlan(plan: Awaited<ReturnType<typeof AgentCooking.generate
               <details class="recipe-steps">
                 <summary>Cooking steps</summary>
                 <ol>${recipe.instructions.map(step => `<li>${escapeHtml(step)}</li>`).join('')}</ol>
-                ${recipe.tips ? `<p><strong>Chef note:</strong> ${escapeHtml(recipe.tips)}</p>` : ''}
+                ${recipe.tips ? `<p><strong>Kitchen note:</strong> ${escapeHtml(recipe.tips)}</p>` : ''}
               </details>
               <small>Suitable for ${escapeHtml(recipe.compatibleRoommates.join(', ') || 'the household')}</small>
               <button data-cook-recipe="${escapeHtml(recipe.id)}">Cook this</button>
@@ -986,7 +1024,7 @@ async function routeMessage(text: string) {
         addMessage({
           role: 'assistant',
           agent: 'general',
-          text: 'OpenAI is not connected yet. Open AI settings, add an API key, and I will answer general household questions through the backend.',
+          text: 'OpenAI is not connected yet. Open Settings, add an API key, and I will answer general household questions through the backend.',
         });
         return;
       }
@@ -1004,7 +1042,7 @@ async function routeMessage(text: string) {
       addMessage({
         role: 'assistant',
         agent: 'general',
-        text: generated || 'OpenAI could not complete that request. Check the saved model and API key in AI settings, then try again.',
+        text: generated || 'OpenAI could not complete that request. Check the saved model and API key in Settings, then try again.',
       });
     }
   } catch (error) {
@@ -1078,7 +1116,7 @@ function renderHeaderAndRailBadges() {
   const headerFlatText = document.querySelector<HTMLElement>('#header-flat-text');
   const headerUserText = document.querySelector<HTMLElement>('#header-user-text');
   if (headerFlatText) {
-    headerFlatText.textContent = `${activeFlat.residenceName.split(' ')[0]} · ${activeFlat.flatNumber}`;
+    headerFlatText.textContent = `${activeFlat.flatName} · ${activeFlat.flatNumber}`;
   }
   if (headerUserText) {
     headerUserText.textContent = currentUser.name || 'Sam';
@@ -1094,8 +1132,8 @@ function renderHeaderAndRailBadges() {
   if (railUserName) railUserName.textContent = currentUser.name || 'Sam';
   if (railUserPhone) railUserPhone.textContent = currentUser.phone || '+91 98765 43210';
   if (railUserAvatar) railUserAvatar.textContent = (currentUser.name || 'S').slice(0, 1).toUpperCase();
-  if (railFlatName) railFlatName.textContent = `${activeFlat.flatNumber} · ${activeFlat.flatName}`;
-  if (railResidenceName) railResidenceName.textContent = activeFlat.residenceName;
+  if (railFlatName) railFlatName.textContent = activeFlat.flatName;
+  if (railResidenceName) railResidenceName.textContent = `${activeFlat.flatNumber}, ${activeFlat.residenceName}`;
 }
 
 function renderAll() {
@@ -1103,11 +1141,11 @@ function renderAll() {
   renderHeaderAndRailBadges();
   const status = document.querySelector('#status-text')!;
   status.textContent = isDatabaseSynchronized
-    ? 'Live with your household'
+    ? 'Pantry checked just now'
     : isConnected
-      ? 'Synchronizing your household'
+      ? 'Pantry is checking the home'
       : isConnecting
-        ? 'Reconnecting to your household'
+        ? 'Pantry is reconnecting'
         : 'Offline — local chat still works';
   document.querySelector('.status-dot')?.classList.toggle('offline', !isConnected);
 }
@@ -1133,17 +1171,12 @@ function syncAiStatus() {
   const isVerified = isBackendVerified || hasAnyKey;
   const isConfigured = isBackendConfigured || hasAnyKey;
 
-  const label = isVerified
-    ? 'AI settings · Connected'
-    : isConfigured
-      ? 'AI settings · Needs verification'
-      : 'AI settings · Not connected';
-  document.querySelector('#open-ai-settings')!.textContent = label;
+  document.querySelector('#open-ai-settings')!.textContent = 'Settings';
   document.querySelector('#mobile-ai-settings')!.textContent = isVerified
-    ? 'AI connected'
+    ? 'Settings · AI connected'
     : isConfigured
-      ? 'Verify AI connection'
-      : 'AI settings';
+      ? 'Settings · Verify AI'
+      : 'Settings';
 }
 
 const DATABASE_RECONNECT_BASE_DELAY_MS = 1_000;
@@ -1429,6 +1462,11 @@ function openDialog(id: string) {
   document.querySelector<HTMLDialogElement>(`#${id}`)?.showModal();
 }
 
+function closeSettingsBoard() {
+  const settings = document.querySelector<HTMLDialogElement>('#ai-dialog');
+  if (settings?.open) settings.close();
+}
+
 function showProfileDialog() {
   const profile = HouseholdConfigManager.getProfile(currentIdentity || 'local', currentName());
   (document.querySelector<HTMLInputElement>('#profile-name')!).value = profile.displayName;
@@ -1438,7 +1476,10 @@ function showProfileDialog() {
   });
   openDialog('profile-dialog');
 }
-document.querySelector('#open-profile')!.addEventListener('click', showProfileDialog);
+document.querySelector('#open-profile')!.addEventListener('click', () => {
+  closeSettingsBoard();
+  showProfileDialog();
+});
 document.querySelector('#mobile-profile')!.addEventListener('click', showProfileDialog);
 
 document.querySelector<HTMLFormElement>('#profile-form')!.addEventListener('submit', event => {
@@ -1455,7 +1496,7 @@ document.querySelector<HTMLFormElement>('#profile-form')!.addEventListener('subm
   }
   document.querySelector<HTMLDialogElement>('#profile-dialog')!.close();
   renderContextPanel();
-  showToast('Household profile updated.');
+  showToast('Your profile was updated.');
 });
 
 async function undoAiChange() {
@@ -1573,9 +1614,9 @@ document.querySelector<HTMLFormElement>('#ai-form')!.addEventListener('submit', 
     }
   }
 
-  document.querySelector('#open-ai-settings')!.textContent = 'AI settings · Checking connection';
-  document.querySelector('#mobile-ai-settings')!.textContent = 'Checking AI connection';
-  showToast('AI settings saved. Testing connection...');
+  document.querySelector('#open-ai-settings')!.textContent = 'Settings';
+  document.querySelector('#mobile-ai-settings')!.textContent = 'Settings · Checking AI';
+  showToast('AI connection saved. Testing now.');
 
   const verified = await AIProvider.testConnection(apiKey, model);
   syncAiStatus();
@@ -1601,7 +1642,7 @@ function createNewConversation() {
   localStorage.setItem('tabby_active_conversation_default', id);
   if (isConnected) {
     try {
-      connection.reducers.createConversation({ conversationId: id, title: 'Home conversation' });
+      connection.reducers.createConversation({ conversationId: id, title: 'New conversation' });
     } catch (err) {
       console.warn('createConversation notice:', err);
     }
@@ -1668,7 +1709,7 @@ document.querySelector<HTMLFormElement>('#quick-rule-form')?.addEventListener('s
   if (!title) return;
   addOrUpdateFlatRule(ruleType, title);
   titleInput.value = '';
-  showToast(`Added ${ruleType} flat rule.`);
+  showToast(`Added an ${ruleType === 'explicit' ? 'agreed' : 'usual'} house rule.`);
 });
 
 document.querySelector('#reset-tabby-db')?.addEventListener('click', clearAllTabbyData);
@@ -1705,12 +1746,23 @@ function fillSamDemo() {
   if (nameInput) nameInput.value = 'Sam';
   if (phoneInput) phoneInput.value = '+91 98765 43210';
   if (otpInput) otpInput.value = '1111';
-  showToast('Demo details filled: Sam (Dummy OTP: 1111)');
+  showToast('Sam demo details are ready. Verification code: 1111.');
 }
 
-document.querySelector('#open-login-dialog')?.addEventListener('click', showLoginDialog);
+document.querySelector('#open-login-dialog')?.addEventListener('click', () => {
+  closeSettingsBoard();
+  showLoginDialog();
+});
 document.querySelector('#header-user-badge')?.addEventListener('click', showLoginDialog);
 document.querySelector('#fill-sam-demo')?.addEventListener('click', fillSamDemo);
+document.querySelector('.create-home-action')?.addEventListener('click', () => {
+  document.querySelector<HTMLDialogElement>('#login-dialog')?.close();
+  showOnboardingDialog('create');
+});
+document.querySelector('.join-home-action')?.addEventListener('click', () => {
+  document.querySelector<HTMLDialogElement>('#login-dialog')?.close();
+  showOnboardingDialog('join');
+});
 
 document.querySelector<HTMLFormElement>('#login-form')?.addEventListener('submit', event => {
   event.preventDefault();
@@ -1751,7 +1803,7 @@ function updateOnboardFlatsDropdown() {
   const selectedResId = resSelect.value;
   if (selectedResId === '__new__') {
     if (newResGroup) newResGroup.hidden = false;
-    flatSelect.innerHTML = `<option value="__new__">+ Create new flat...</option>`;
+    flatSelect.innerHTML = `<option value="__new__">Create a new flat or address</option>`;
     if (newFlatGroup) newFlatGroup.hidden = false;
     return;
   }
@@ -1762,7 +1814,7 @@ function updateOnboardFlatsDropdown() {
 
   flatSelect.innerHTML = flats.map(f => `
     <option value="${escapeHtml(f.id)}" ${f.id === activeFlat.flatId ? 'selected' : ''}>${escapeHtml(f.flatNumber)} — ${escapeHtml(f.name)}</option>
-  `).join('') + `<option value="__new__">+ Create new flat...</option>`;
+  `).join('') + `<option value="__new__">Create a new flat or address</option>`;
 
   if (newFlatGroup) {
     newFlatGroup.hidden = flatSelect.value !== '__new__';
@@ -1782,19 +1834,29 @@ function populateOnboardingDropdowns() {
   if (resSelect) {
     resSelect.innerHTML = residences.map(r => `
       <option value="${escapeHtml(r.id)}" ${r.id === activeFlat.residenceId ? 'selected' : ''}>${escapeHtml(r.name)} (${escapeHtml(r.address)})</option>
-    `).join('') + `<option value="__new__">+ Add new residence...</option>`;
+    `).join('') + `<option value="__new__">Create a new home</option>`;
   }
 
   updateOnboardFlatsDropdown();
 }
 
-function showOnboardingDialog() {
+function showOnboardingDialog(mode: 'create' | 'join' = 'join') {
   populateOnboardingDropdowns();
+  if (mode === 'create') {
+    const residence = document.querySelector<HTMLSelectElement>('#onboard-residence');
+    if (residence) {
+      residence.value = '__new__';
+      updateOnboardFlatsDropdown();
+    }
+  }
   openDialog('onboard-dialog');
 }
 
-document.querySelector('#open-onboard-dialog')?.addEventListener('click', showOnboardingDialog);
-document.querySelector('#header-flat-badge')?.addEventListener('click', showOnboardingDialog);
+document.querySelector('#open-onboard-dialog')?.addEventListener('click', () => {
+  closeSettingsBoard();
+  showOnboardingDialog();
+});
+document.querySelector('#header-flat-badge')?.addEventListener('click', () => showOnboardingDialog());
 document.querySelector('#onboard-residence')?.addEventListener('change', updateOnboardFlatsDropdown);
 document.querySelector('#onboard-flat')?.addEventListener('change', () => {
   const flatSelect = document.querySelector<HTMLSelectElement>('#onboard-flat')!;
@@ -1860,7 +1922,8 @@ document.querySelector<HTMLFormElement>('#onboard-form')?.addEventListener('subm
   const activeSelection = ResidenceManager.onboardMember(resId, flatId, displayName);
   document.querySelector<HTMLDialogElement>('#onboard-dialog')?.close();
   renderAll();
-  showToast(`Onboarded as ${displayName} in ${activeSelection.flatNumber} (${activeSelection.flatName})!`, 'success');
+  showToast(`${activeSelection.flatName} is ready. Start with your first real task.`, 'success');
+  document.querySelector<HTMLTextAreaElement>('#chat-input')?.focus();
 });
 
 renderConversation();
