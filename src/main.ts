@@ -261,8 +261,26 @@ const host = import.meta.env.VITE_SPACETIMEDB_URI ?? 'https://maincloud.spacetim
 const database = import.meta.env.VITE_SPACETIMEDB_DB ?? 'tabby';
 const tokenKey = `${host}/${database}/auth_token`;
 
+function getStoredDatabaseToken() {
+  try {
+    return localStorage.getItem(tokenKey) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function storeDatabaseToken(token: string) {
+  try {
+    localStorage.setItem(tokenKey, token);
+  } catch (error) {
+    console.warn('Could not persist the SpacetimeDB token:', error);
+  }
+}
+
 let currentIdentity = '';
 let isConnected = false;
+let isConnecting = true;
+let isDatabaseSynchronized = false;
 let attachedReceipt: string | undefined;
 let attachedReceiptName = '';
 let routeIntent: AgentIntent | 'idle' = 'idle';
@@ -1100,7 +1118,13 @@ function renderAll() {
   renderContextPanel();
   renderHeaderAndRailBadges();
   const status = document.querySelector('#status-text')!;
-  status.textContent = isConnected ? 'Live with your household' : 'Offline — local chat still works';
+  status.textContent = isDatabaseSynchronized
+    ? 'Live with your household'
+    : isConnected
+      ? 'Synchronizing your household'
+      : isConnecting
+        ? 'Reconnecting to your household'
+        : 'Offline — local chat still works';
   document.querySelector('.status-dot')?.classList.toggle('offline', !isConnected);
 }
 
@@ -1138,59 +1162,204 @@ function syncAiStatus() {
       : 'AI settings';
 }
 
-const connection = DbConnection.builder()
-  .withUri(host)
-  .withDatabaseName(database)
-  .withToken(localStorage.getItem(tokenKey) ?? undefined)
-  .onConnect((ctx, identity, token) => {
-    localStorage.setItem(tokenKey, token);
-    currentIdentity = identity.toHexString();
-    TabbyBrain.savePrivateFacts(currentIdentity, TabbyBrain.getPrivateFacts('local'));
-    isConnected = true;
-    ctx.subscriptionBuilder()
-      .onApplied(() => {
-        const user = AuthManager.getCurrentUser();
-        if (user && user.name) {
-          try {
-            connection.reducers.setDisplayName({ displayName: user.name });
-          } catch (e) {
-            console.warn('Syncing displayName to SpacetimeDB:', e);
-          }
-        }
-        try {
-          const dbRes = [...connection.db.residence.iter()];
-          const dbFlats = [...connection.db.flat.iter()];
-          ResidenceManager.syncFromDb(dbRes, dbFlats);
-        } catch (e) {}
+const DATABASE_RECONNECT_BASE_DELAY_MS = 1_000;
+const DATABASE_RECONNECT_MAX_DELAY_MS = 30_000;
 
-        ensureConversation();
-        syncAiStatus();
-        renderAll();
-      })
-      .subscribe([
-        tables.residence,
-        tables.flat,
-        tables.flatRule,
-        tables.member,
-        tables.pantryItem,
-        tables.expense,
-        tables.expenseSplit,
-        tables.sharedMemory,
-        tables.myConversations,
-        tables.myConversationMessages,
-        tables.myAiStatus,
-      ]);
-  })
-  .onConnectError((_ctx, error) => {
-    isConnected = false;
-    console.warn('SpacetimeDB connection error:', error);
+let connection!: DbConnection;
+let databaseToken = getStoredDatabaseToken();
+let connectionGeneration = 0;
+let reconnectAttempt = 0;
+let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+let connectionAttemptInFlight = false;
+
+function attachDatabaseListeners(conn: DbConnection) {
+  const ifCurrent = (callback: () => void) => () => {
+    if (conn === connection) callback();
+  };
+  const syncResidences = ifCurrent(() => {
+    ResidenceManager.syncFromDb([...conn.db.residence.iter()], [...conn.db.flat.iter()]);
     renderAll();
-  })
-  .onDisconnect(() => {
-    isConnected = false;
-    renderAll();
-  })
-  .build();
+  });
+
+  conn.db.residence.onInsert(syncResidences);
+  conn.db.residence.onUpdate(syncResidences);
+  conn.db.flat.onInsert(syncResidences);
+  conn.db.flat.onUpdate(syncResidences);
+  conn.db.flatRule.onInsert(ifCurrent(renderAll));
+  conn.db.flatRule.onUpdate(ifCurrent(renderAll));
+  conn.db.flatRule.onDelete(ifCurrent(renderAll));
+  conn.db.member.onInsert(ifCurrent(renderAll));
+  conn.db.member.onUpdate(ifCurrent(renderAll));
+  conn.db.pantryItem.onInsert(ifCurrent(renderAll));
+  conn.db.pantryItem.onUpdate(ifCurrent(renderAll));
+  conn.db.pantryItem.onDelete(ifCurrent(renderAll));
+  conn.db.sharedMemory.onInsert(ifCurrent(renderAll));
+  conn.db.sharedMemory.onUpdate(ifCurrent(renderAll));
+  conn.db.expense.onInsert(ifCurrent(renderAll));
+  conn.db.expense.onUpdate(ifCurrent(renderAll));
+  conn.db.expenseSplit.onInsert(ifCurrent(renderAll));
+  conn.db.expenseSplit.onUpdate(ifCurrent(renderAll));
+  conn.db.myAiStatus.onInsert(ifCurrent(syncAiStatus));
+  conn.db.myAiStatus.onUpdate(ifCurrent(syncAiStatus));
+  conn.db.myAiStatus.onDelete(ifCurrent(syncAiStatus));
+  conn.db.myConversations.onInsert(ifCurrent(() => {
+    renderConversationPicker();
+    if (!activeConversationId) ensureConversation();
+  }));
+  conn.db.myConversations.onUpdate(ifCurrent(renderConversationPicker));
+  conn.db.myConversationMessages.onInsert(ifCurrent(syncConversationFromDatabase));
+}
+
+function scheduleDatabaseReconnect(generation: number) {
+  if (generation !== connectionGeneration || reconnectTimer) return;
+
+  isConnected = false;
+  isConnecting = true;
+  isDatabaseSynchronized = false;
+  const delay = Math.min(
+    DATABASE_RECONNECT_BASE_DELAY_MS * 2 ** reconnectAttempt,
+    DATABASE_RECONNECT_MAX_DELAY_MS,
+  );
+  reconnectAttempt += 1;
+  reconnectTimer = setTimeout(() => {
+    if (generation !== connectionGeneration) return;
+    reconnectTimer = undefined;
+    connectToDatabase();
+  }, delay);
+  renderAll();
+}
+
+function connectToDatabase() {
+  if (connectionAttemptInFlight || isConnected) return;
+
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = undefined;
+  }
+
+  const previousConnection = connection;
+  const generation = ++connectionGeneration;
+  if (previousConnection && !previousConnection.isDisconnectRequested) {
+    previousConnection.disconnect();
+  }
+
+  connectionAttemptInFlight = true;
+  isConnecting = true;
+  isDatabaseSynchronized = false;
+  renderAll();
+
+  const nextConnection = DbConnection.builder()
+    .withUri(host)
+    .withDatabaseName(database)
+    .withToken(databaseToken)
+    .onConnect((ctx, identity, token) => {
+      if (generation !== connectionGeneration) return;
+
+      databaseToken = token;
+      storeDatabaseToken(token);
+      currentIdentity = identity.toHexString();
+      TabbyBrain.savePrivateFacts(currentIdentity, TabbyBrain.getPrivateFacts('local'));
+      connectionAttemptInFlight = false;
+      isConnecting = false;
+      isConnected = true;
+      isDatabaseSynchronized = false;
+      renderAll();
+
+      ctx.subscriptionBuilder()
+        .onApplied(() => {
+          if (generation !== connectionGeneration) return;
+
+          reconnectAttempt = 0;
+          isDatabaseSynchronized = true;
+          const user = AuthManager.getCurrentUser();
+          if (user && user.name) {
+            try {
+              ctx.reducers.setDisplayName({ displayName: user.name });
+            } catch (error) {
+              console.warn('Syncing displayName to SpacetimeDB:', error);
+            }
+          }
+          try {
+            ResidenceManager.syncFromDb(
+              [...ctx.db.residence.iter()],
+              [...ctx.db.flat.iter()],
+            );
+          } catch (error) {
+            console.warn('Syncing residences from SpacetimeDB:', error);
+          }
+
+          ensureConversation();
+          syncAiStatus();
+          renderAll();
+        })
+        .onError(errorContext => {
+          if (generation !== connectionGeneration) return;
+
+          console.warn('SpacetimeDB subscription error:', errorContext.event);
+          isDatabaseSynchronized = false;
+          isConnected = false;
+          connectionAttemptInFlight = false;
+          errorContext.disconnect();
+          scheduleDatabaseReconnect(generation);
+        })
+        .subscribe([
+          tables.residence,
+          tables.flat,
+          tables.flatRule,
+          tables.member,
+          tables.pantryItem,
+          tables.expense,
+          tables.expenseSplit,
+          tables.sharedMemory,
+          tables.myConversations,
+          tables.myConversationMessages,
+          tables.myAiStatus,
+        ]);
+    })
+    .onConnectError((_ctx, error) => {
+      if (generation !== connectionGeneration) return;
+
+      connectionAttemptInFlight = false;
+      isConnected = false;
+      console.warn('SpacetimeDB connection error:', error);
+      scheduleDatabaseReconnect(generation);
+    })
+    .onDisconnect((_ctx, error) => {
+      if (generation !== connectionGeneration) return;
+
+      connectionAttemptInFlight = false;
+      isConnected = false;
+      isDatabaseSynchronized = false;
+      if (error) console.warn('SpacetimeDB disconnected:', error);
+      scheduleDatabaseReconnect(generation);
+    })
+    .build();
+
+  connection = nextConnection;
+  attachDatabaseListeners(nextConnection);
+}
+
+function reconnectDatabaseImmediately() {
+  if (connectionAttemptInFlight) return;
+  if (isConnected && !connection.isSocketClosed) return;
+
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = undefined;
+  }
+  reconnectAttempt = 0;
+  isConnected = false;
+  connectToDatabase();
+}
+
+window.addEventListener('online', reconnectDatabaseImmediately);
+window.addEventListener('focus', reconnectDatabaseImmediately);
+window.addEventListener('pageshow', reconnectDatabaseImmediately);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') reconnectDatabaseImmediately();
+});
+
+connectToDatabase();
 
 AIProvider.configureBackend(request => connection.procedures.runAi({
   prompt: request.prompt,
@@ -1198,46 +1367,6 @@ AIProvider.configureBackend(request => connection.procedures.runAi({
   imageDataUrl: request.imageDataUrl,
   jsonMode: request.jsonMode,
 }));
-
-connection.db.residence.onInsert(() => {
-  ResidenceManager.syncFromDb([...connection.db.residence.iter()], [...connection.db.flat.iter()]);
-  renderAll();
-});
-connection.db.residence.onUpdate(() => {
-  ResidenceManager.syncFromDb([...connection.db.residence.iter()], [...connection.db.flat.iter()]);
-  renderAll();
-});
-connection.db.flat.onInsert(() => {
-  ResidenceManager.syncFromDb([...connection.db.residence.iter()], [...connection.db.flat.iter()]);
-  renderAll();
-});
-connection.db.flat.onUpdate(() => {
-  ResidenceManager.syncFromDb([...connection.db.residence.iter()], [...connection.db.flat.iter()]);
-  renderAll();
-});
-connection.db.flatRule.onInsert(renderAll);
-connection.db.flatRule.onUpdate(renderAll);
-connection.db.flatRule.onDelete(renderAll);
-connection.db.member.onInsert(renderAll);
-connection.db.member.onUpdate(renderAll);
-connection.db.pantryItem.onInsert(renderAll);
-connection.db.pantryItem.onUpdate(renderAll);
-connection.db.pantryItem.onDelete(renderAll);
-connection.db.sharedMemory.onInsert(renderAll);
-connection.db.sharedMemory.onUpdate(renderAll);
-connection.db.expense.onInsert(renderAll);
-connection.db.expense.onUpdate(renderAll);
-connection.db.expenseSplit.onInsert(renderAll);
-connection.db.expenseSplit.onUpdate(renderAll);
-connection.db.myAiStatus.onInsert(syncAiStatus);
-connection.db.myAiStatus.onUpdate(syncAiStatus);
-connection.db.myAiStatus.onDelete(syncAiStatus);
-connection.db.myConversations.onInsert(() => {
-  renderConversationPicker();
-  if (!activeConversationId) ensureConversation();
-});
-connection.db.myConversations.onUpdate(renderConversationPicker);
-connection.db.myConversationMessages.onInsert(syncConversationFromDatabase);
 
 document.querySelector<HTMLFormElement>('#chat-form')!.addEventListener('submit', event => {
   event.preventDefault();
@@ -1723,4 +1852,3 @@ renderConversation();
 renderAll();
 syncAiStatus();
 setContextOpen(false);
-
