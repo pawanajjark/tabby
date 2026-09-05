@@ -1,9 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { projectExpenseBalances, renderExpenseBalances } from '../src/features/household/expenses.ts';
-import { renderBillReview } from '../src/features/household/billing.ts';
+import { paiseInputValue, renderBillReview, rupeeInputToPaise } from '../src/features/household/billing.ts';
 
 const identity = (value: string) => ({ toHexString: () => value });
+
+test('bill allocation inputs translate between stored paise and displayed rupees', () => {
+  assert.equal(paiseInputValue(60_000n), '600');
+  assert.equal(paiseInputValue(60_050n), '600.50');
+  assert.equal(rupeeInputToPaise('600'), 60_000n);
+  assert.equal(rupeeInputToPaise('600.50'), 60_050n);
+  assert.throws(() => rupeeInputToPaise('600.999'), /valid rupee amount/);
+});
 
 test('an equal split makes each non-payer owe the payer while the payer share is not debt', () => {
   const a = identity('asha');
@@ -133,4 +141,11 @@ test('a recorded bill no longer describes allocations as preview-only or offers 
   assert.doesNotMatch(html, /original backend|preview only/i);
   assert.match(html, /Recorded/);
   assert.match(html, /data-record-bill disabled/);
+  assert.match(html, /bill-review-header/);
+  assert.match(html, /bill-review-total/);
+  assert.match(html, /bill-review-section/);
+  assert.match(html, /bill-share-field/);
+  assert.match(html, /share in rupees/);
+  assert.match(html, /data-allocation-unit="rupees" value="840"/);
+  assert.doesNotMatch(html, /value="84000"/);
 });

@@ -24,7 +24,7 @@ test('anonymous startup does not create a database conversation', () => {
   const block = clientSource.slice(start, end);
 
   assert.match(block, /if \(!currentIdentityHasMembership\(\)\) \{[\s\S]*?return;/);
-  assert.match(block, /connection\.reducers\.createConversation/);
+  assert.match(block, /requestConversationCreation\(id\)/);
 });
 
 test('anonymous local chat never invokes conversation reducers', () => {
@@ -37,6 +37,25 @@ test('anonymous local chat never invokes conversation reducers', () => {
 
   assert.match(persistBlock, /!currentIdentityHasMembership\(\)/);
   assert.match(createBlock, /if \(currentIdentityHasMembership\(\)\)/);
+});
+
+test('database conversations are selected per home and duplicate creates are coalesced', () => {
+  const keyStart = clientSource.indexOf('function activeConversationStorageKey()');
+  const keyEnd = clientSource.indexOf('\nfunction selectConversation(', keyStart);
+  const keyBlock = clientSource.slice(keyStart, keyEnd);
+  const ensureStart = clientSource.indexOf('function ensureConversation()');
+  const ensureEnd = clientSource.indexOf('\nconst EMPTY_CONVERSATION_STARTERS', ensureStart);
+  const ensureBlock = clientSource.slice(ensureStart, ensureEnd);
+
+  assert.match(keyBlock, /activeHomeSelection\(\)\.flatId/);
+  assert.match(keyBlock, /tabby_active_conversation:\$\{identity\}:\$\{homeId\}/);
+  assert.match(keyBlock, /pendingConversationCreates\.has\(id\)/);
+  assert.match(keyBlock, /\.catch\(err => console\.warn/);
+  assert.match(ensureBlock, /localStorage\.getItem\(activeConversationStorageKey\(\)\)/);
+  assert.doesNotMatch(ensureBlock, /tabby_active_conversation_default/);
+  assert.match(ensureBlock, /const id = saved \|\| crypto\.randomUUID\(\)/);
+  assert.match(ensureBlock, /conversation = getLocalConversation\(id\)/);
+  assert.doesNotMatch(ensureBlock, /conversation\.forEach/);
 });
 
 test('changing a display name cannot create a membership', () => {

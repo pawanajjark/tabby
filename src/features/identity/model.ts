@@ -71,6 +71,7 @@ export interface HomeChoice {
   name: string;
   label: string;
   residenceName: string;
+  memberCount?: number;
   active: boolean;
 }
 
@@ -102,6 +103,7 @@ export interface IdentityFeatureState {
   invitation: InvitationLookupState;
   basics: HomeBasicsDraft;
   homes: HomeChoice[];
+  selectedHomeId?: bigint;
   homesSynchronized: boolean;
   accounts: AccountChoice[];
   firstTaskItems: FirstTaskItem[];

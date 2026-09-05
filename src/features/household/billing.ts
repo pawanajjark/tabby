@@ -38,6 +38,19 @@ export interface BillTotals {
   valid: boolean;
 }
 
+export function paiseInputValue(amountPaise: bigint): string {
+  const whole = amountPaise / 100n;
+  const fraction = (amountPaise % 100n).toString().padStart(2, '0');
+  return fraction === '00' ? whole.toString() : `${whole}.${fraction}`;
+}
+
+export function rupeeInputToPaise(value: string): bigint {
+  const normalized = value.trim();
+  if (!/^\d+(?:\.\d{0,2})?$/.test(normalized)) throw new Error('Enter a valid rupee amount with up to two decimal places.');
+  const [whole, fraction = ''] = normalized.split('.');
+  return BigInt(whole) * 100n + BigInt(`${fraction}00`.slice(0, 2));
+}
+
 export type BillRecordPhase =
   | { step: 'editing'; acknowledgement: AcknowledgementState }
   | { step: 'creating-review'; acknowledgement: AcknowledgementState }
@@ -215,21 +228,26 @@ export function renderBillReview(draft: BillDraft, online: boolean, phase: BillR
   ).join('');
   const dateValue = new Date(Number(draft.expenseDateMicros / 1_000n)).toISOString().slice(0, 10);
   const lines = draft.lines.map(line => `<article class="bill-line" data-line-id="${escapeHouseholdHtml(line.id)}">
-    <header><h3>${escapeHouseholdHtml(line.label)}</h3><strong>${paiseLabel(line.amountPaise)}</strong></header>
+    <header><div><span>Receipt item</span><h3>${escapeHouseholdHtml(line.label)}</h3></div><strong>${paiseLabel(line.amountPaise)}</strong></header>
     <div class="bill-line-allocations">${line.allocations.map(allocation => `<label class="bill-person ${allocation.exempt ? 'is-exempt' : ''}">
       <span class="bill-person-name">${escapeHouseholdHtml(allocation.member.displayName)}</span>
-      <input type="number" data-allocation-member="${escapeHouseholdHtml(allocation.member.identity.toHexString())}" value="${allocation.amountPaise}" ${allocation.exempt || locked ? 'disabled' : ''} />
+      <span class="bill-share-field"><input type="number" inputmode="decimal" min="0" step="0.01" aria-label="${escapeHouseholdHtml(allocation.member.displayName)} share in rupees" data-allocation-member="${escapeHouseholdHtml(allocation.member.identity.toHexString())}" data-allocation-unit="rupees" value="${paiseInputValue(allocation.amountPaise)}" ${allocation.exempt || locked ? 'disabled' : ''} /></span>
       <span class="bill-exempt-control"><input type="checkbox" data-allocation-exempt ${allocation.exempt ? 'checked' : ''} ${locked ? 'disabled' : ''} /><span>Exempt</span></span>
     </label>`).join('')}</div>
   </article>`).join('');
+  const recordLabel = locked
+    ? 'Recorded'
+    : phase.acknowledgement.status === 'submitting'
+      ? 'Recording'
+      : 'Record expense';
   return `<section class="bill-review ${mobile ? 'bill-review-mobile' : 'bill-review-desktop'} ${online ? '' : 'is-offline'}" data-bill-review>
-    <header><p class="eyebrow">${locked ? 'RECORDED' : 'REVIEW BEFORE RECORDING'}</p><h2>${escapeHouseholdHtml(draft.title)}</h2><p>${locked ? 'This expense is in the household ledger and its balances are live.' : 'Review the payer, date, and shares. Recording creates the household balance and expense history.'}</p></header>
+    <header class="bill-review-header"><div class="bill-review-heading"><p class="eyebrow">${locked ? 'EXPENSE RECORDED' : 'RECEIPT REVIEW'}</p><h2>${escapeHouseholdHtml(draft.title)}</h2><p>${locked ? 'Balances are live in the household ledger.' : 'Check the payment details and each person’s share before recording.'}</p></div><div class="bill-review-total"><span>Total</span><strong>${paiseLabel(totals.billPaise)}</strong><small>${draft.lines.length} item${draft.lines.length === 1 ? '' : 's'}</small></div></header>
     ${online ? '' : '<p class="bill-offline" role="status">Reconnect to edit shared allocations or record this bill.</p>'}
-    <div class="bill-fields"><label>Paid by<select data-bill-payer ${locked ? 'disabled' : ''}>${options}</select></label><label>Date<input type="date" data-bill-date value="${dateValue}" ${locked ? 'disabled' : ''} /></label></div>
-    <div class="bill-lines">${lines}</div>
-    <footer><span>Allocated ${paiseLabel(totals.allocatedPaise)} of ${paiseLabel(totals.billPaise)}</span>
-      <button type="button" data-record-bill ${control.disabled ? 'disabled' : ''}>${locked ? 'Recorded' : 'Record expense'}</button>
-      <p class="bill-record-state">${escapeHouseholdHtml(control.reason)}</p>
+    <section class="bill-review-section" aria-labelledby="bill-payment-heading"><div class="bill-section-heading"><h3 id="bill-payment-heading">Payment details</h3><span>Who paid, and when</span></div><div class="bill-fields"><label><span>Paid by</span><select data-bill-payer ${locked ? 'disabled' : ''}>${options}</select></label><label><span>Date</span><input type="date" data-bill-date value="${dateValue}" ${locked ? 'disabled' : ''} /></label></div></section>
+    <section class="bill-review-section" aria-labelledby="bill-split-heading"><div class="bill-section-heading"><h3 id="bill-split-heading">Split details</h3><span>Adjust shares or mark exemptions</span></div><div class="bill-lines">${lines}</div></section>
+    <footer><div class="bill-allocation-total"><span>Allocated</span><strong>${paiseLabel(totals.allocatedPaise)} <small>of ${paiseLabel(totals.billPaise)}</small></strong></div>
+      <button type="button" data-record-bill ${control.disabled ? 'disabled' : ''}>${recordLabel}</button>
+      ${control.reason ? `<p class="bill-record-state">${escapeHouseholdHtml(control.reason)}</p>` : ''}
     </footer>
   </section>`;
 }
