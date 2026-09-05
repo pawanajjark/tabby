@@ -1554,7 +1554,7 @@ function decodeActionPayload<T>(value?: string): T | undefined {
 }
 
 async function checkoutVisibleGroceries(button: HTMLButtonElement, ingredients: RecipeIngredient[]): Promise<void> {
-  button.textContent = 'Ordering groceries';
+  button.textContent = 'Preparing cart';
   button.disabled = true;
   button.parentElement?.querySelector('[data-instamart-review]')?.remove();
   const sessionId = `conversation:${activeConversationId}`;
@@ -1582,27 +1582,23 @@ async function checkoutVisibleGroceries(button: HTMLButtonElement, ingredients: 
     console.warn('Could not synchronize the initial shopping attempt:', cause);
   }
   try {
-    const result = await AgentInstamart.checkoutRecipe(ingredients, {
+    const prepared = await AgentInstamart.prepareRecipeCart(ingredients, {
       sessionId,
       priorState: attemptState,
       fallbackAddress: selectedHomeDeliveryAddress(),
     });
-    const data = (result.order.data && typeof result.order.data === 'object' ? result.order.data : result.order) as Record<string, unknown>;
-    const orderId = String(data.orderId || 'created');
-    const unavailable = result.prepared.unavailable.map(item => item.name);
-    button.insertAdjacentHTML('afterend', `<div class="instamart-review" data-instamart-review><strong>Instamart order placed</strong><p>Order ${escapeHtml(orderId)} is confirmed. ${result.prepared.matches.length} product${result.prepared.matches.length === 1 ? '' : 's'} ordered.${unavailable.length ? ` Not found: ${escapeHtml(unavailable.join(', '))}.` : ''}</p></div>`);
-    button.textContent = 'Groceries ordered';
-    if (result.state) {
+    currentInstamartCarts.set(sessionId, prepared);
+    button.insertAdjacentHTML('afterend', renderInstamartReview(prepared));
+    button.textContent = 'Cart ready';
+    bindInstamartConfirmation(button.parentElement);
+    if (prepared.state) {
       try {
-        await persistShoppingState(result.state);
-        showToast('Instamart order placed and shopping context synchronized.');
+        await persistShoppingState(prepared.state);
       } catch (cause) {
-        console.warn('Order placed, but shopping context could not be synchronized:', cause);
-        showToast('Order placed. Shopping history will synchronize after Tabby reconnects.', 'error');
+        console.warn('Cart prepared, but its review context could not be synchronized:', cause);
       }
-    } else {
-      showToast('Instamart order placed successfully.');
     }
+    showToast('Review the cart details and total, then confirm the order.');
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
     try {
@@ -2159,7 +2155,7 @@ function renderInstamartReview(prepared: InstamartCartPreparation): string {
         <div><dt>Live total</dt><dd>${total === null ? 'Shown by Instamart at checkout' : formatRupees(total)}</dd></div>
       </dl>
       <p>This is a test order. Review the matched products, total, payment method, and address before placing it.</p>
-      <button class="instamart-confirm" data-confirm-instamart="${escapeHtml(prepared.sessionId)}">Place order</button>
+      <button class="instamart-confirm" data-confirm-instamart="${escapeHtml(prepared.sessionId)}">Confirm and place order</button>
     </section>`;
 }
 
@@ -2168,20 +2164,31 @@ function bindInstamartConfirmation(host: HTMLElement | null): void {
   if (!button) return;
   button.onclick = async () => {
     const sessionId = button.dataset.confirmInstamart || '';
-    if (!currentInstamartCarts.has(sessionId)) return;
+    const prepared = currentInstamartCarts.get(sessionId);
+    const priorState = prepared?.state ?? synchronizedShoppingState(sessionId);
+    if (!priorState || priorState.phase !== 'awaiting_confirmation') {
+      showToast('This cart review expired. Prepare the groceries again.', 'error');
+      return;
+    }
     button.disabled = true;
     button.textContent = 'Placing order';
     try {
-      const result = await AgentInstamart.checkout(sessionId);
+      const result = await AgentInstamart.checkout(sessionId, priorState);
       currentInstamartCarts.delete(sessionId);
-      const data = (result.data && typeof result.data === 'object' ? result.data : result) as Record<string, unknown>;
+      const data = (result.order.data && typeof result.order.data === 'object' ? result.order.data : result.order) as Record<string, unknown>;
       const orderId = String(data.orderId || 'created');
       const review = host?.querySelector<HTMLElement>('[data-instamart-review]');
       if (review) review.innerHTML = `<strong>Instamart order placed</strong><p>Order ${escapeHtml(orderId)} is confirmed in the test environment. No real purchase was made.</p>`;
-      showToast('Instamart order placed successfully.');
+      const checkoutButton = host?.querySelector<HTMLButtonElement>('[data-shop-list], [data-cook-checkout]');
+      if (checkoutButton) checkoutButton.textContent = 'Groceries ordered';
+      if (result.state) {
+        try { await persistShoppingState(result.state); }
+        catch (cause) { console.warn('Order placed, but its final state could not be synchronized:', cause); }
+      }
+      showToast('Instamart order placed successfully. You can ask Tabby for its status and ETA.');
     } catch (cause) {
       button.disabled = false;
-      button.textContent = 'Place order';
+      button.textContent = 'Confirm and place order';
       showToast(cause instanceof Error ? cause.message : String(cause), 'error');
     }
   };

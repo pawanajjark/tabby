@@ -38,20 +38,14 @@ const server = createServer(async (request, response) => {
       const prepared = await agent.prepare(body.items || [], body.sessionId, body.fallbackAddress);
       return send(response, 200, { ...prepared, state: await store.load(prepared.sessionId) });
     }
-    if (request.method === 'POST' && request.url === '/api/recipe-checkout') {
+    if (request.method === 'POST' && request.url === '/api/checkout') {
       const body = await jsonBody(request) as RecipeRequestBody & { confirmed?: boolean };
-      if (body.confirmed !== true) throw new Error('The recipe checkout button must explicitly confirm this developer order.');
+      if (!body.sessionId) throw new Error('A shopping session ID is required to confirm checkout.');
       const store = stateStoreFor(request);
       await hydratePriorState(store, body.sessionId, body.priorState);
       const agent = new RecipeCheckoutAgent(client, store);
-      const prepared = await agent.prepare(body.items || [], body.sessionId, body.fallbackAddress);
-      const order = unwrapToolResult(await agent.checkout(prepared.sessionId, true));
-      return send(response, 200, { prepared, order, state: await store.load(prepared.sessionId) });
-    }
-    if (request.method === 'POST' && request.url === '/api/checkout') {
-      const body = await jsonBody(request) as { sessionId?: string; confirmed?: boolean };
-      const agent = new RecipeCheckoutAgent(client, stateStoreFor(request));
-      return send(response, 200, unwrapToolResult(await agent.checkout(body.sessionId || '', body.confirmed === true)));
+      const order = unwrapToolResult(await agent.checkout(body.sessionId, body.confirmed === true));
+      return send(response, 200, { order, state: await store.load(body.sessionId) });
     }
     if (request.method === 'POST' && request.url === '/api/order-status') {
       const body = await jsonBody(request) as RecipeRequestBody;

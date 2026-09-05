@@ -72,7 +72,6 @@ The proxy mirrors the upstream `tools/list` response. It adds one required local
 - `GET /api/tools`
 - `POST /api/tools/:name` — generic access to all 19 tools
 - `POST /api/recipe-cart` — autonomous recipe-item matching through checkout review
-- `POST /api/recipe-checkout` — one-click developer recipe matching and confirmed checkout
 - `POST /api/checkout` — requires `{ "sessionId": "...", "confirmed": true }`
 
 The CORS policy permits Tabby's local Vite origins on `localhost` or `127.0.0.1`.

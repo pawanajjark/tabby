@@ -12,11 +12,14 @@ test('restored shopping and recipe cards retain the payload needed by their acti
   assert.match(mainSource, /decodeActionPayload<Recipe>\(host\?\.dataset\.recipePayload\)/);
 });
 
-test('the recipe action reveals its missing items and invokes one-click checkout', () => {
+test('the recipe action reveals missing items and prepares a detailed checkout review', () => {
   assert.match(mainSource, /data-cook-recipe=/);
   assert.match(mainSource, /Order these items from Instamart:/);
   assert.match(mainSource, /data-cook-checkout>Checkout groceries/);
-  assert.match(mainSource, /AgentInstamart\.checkoutRecipe\(ingredients,/);
+  assert.match(mainSource, /AgentInstamart\.prepareRecipeCart\(ingredients,/);
+  assert.match(mainSource, /renderInstamartReview\(prepared\)/);
+  assert.match(mainSource, /Confirm and place order/);
+  assert.match(mainSource, /AgentInstamart\.checkout\(sessionId, priorState\)/);
 });
 
 test('every shopping entry point requires a synchronized selected home', () => {

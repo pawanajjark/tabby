@@ -18,10 +18,10 @@ export interface InstamartCartPreparation {
   cart: Record<string, unknown>;
   paymentMethod: string;
   expiresAt: number;
+  state?: InstamartShoppingState;
 }
 
-export interface InstamartRecipeOrder {
-  prepared: InstamartCartPreparation;
+export interface InstamartCheckoutResult {
   order: Record<string, unknown>;
   state?: InstamartShoppingState;
 }
@@ -62,23 +62,15 @@ export class AgentInstamart {
     databaseToken = token;
   }
 
-  static async prepareRecipeCart(ingredients: RecipeIngredient[], sessionId?: string): Promise<InstamartCartPreparation> {
+  static async prepareRecipeCart(ingredients: RecipeIngredient[], context: InstamartCheckoutContext): Promise<InstamartCartPreparation> {
     return request<InstamartCartPreparation>('/api/recipe-cart', {
       items: ingredients.filter(item => !item.inPantry).map(({ name, quantity, unit }) => ({ name, quantity, unit })),
-      sessionId,
-    });
-  }
-
-  static async checkout(sessionId: string): Promise<Record<string, unknown>> {
-    return request<Record<string, unknown>>('/api/checkout', { sessionId, confirmed: true });
-  }
-
-  static async checkoutRecipe(ingredients: RecipeIngredient[], context: InstamartCheckoutContext): Promise<InstamartRecipeOrder> {
-    return request<InstamartRecipeOrder>('/api/recipe-checkout', {
-      items: ingredients.filter(item => !item.inPantry).map(({ name, quantity, unit }) => ({ name, quantity, unit })),
-      confirmed: true,
       ...context,
     });
+  }
+
+  static async checkout(sessionId: string, priorState?: InstamartShoppingState): Promise<InstamartCheckoutResult> {
+    return request<InstamartCheckoutResult>('/api/checkout', { sessionId, confirmed: true, priorState });
   }
 
   static async trackLatestOrder(state: InstamartShoppingState): Promise<InstamartOrderTracking> {
