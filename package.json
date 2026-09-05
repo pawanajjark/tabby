@@ -3,16 +3,23 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "workspaces": [
+    "instamart-mcp"
+  ],
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "vite",
+    "dev:instamart": "npm --prefix instamart-mcp run dev",
     "build": "tsc --noEmit && vite build",
-    "test": "node --experimental-strip-types --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "test:instamart": "npm --prefix instamart-mcp test"
   },
   "dependencies": {
     "spacetimedb": "2.10.*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "tsx": "^4.20.0",
     "typescript": "^5.7.2",
     "vite": "^6.0.0"
   }

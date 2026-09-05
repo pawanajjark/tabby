@@ -43,6 +43,7 @@ import CreateConversationReducer from "./create_conversation_reducer";
 import CreateHomeAndJoinReducer from "./create_home_and_join_reducer";
 import CreateResidenceReducer from "./create_residence_reducer";
 import DeleteFlatRuleReducer from "./delete_flat_rule_reducer";
+import DeleteShoppingAgentStateReducer from "./delete_shopping_agent_state_reducer";
 import JoinFlatReducer from "./join_flat_reducer";
 import RecordExpenseReducer from "./record_expense_reducer";
 import RecordExpenseV2Reducer from "./record_expense_v_2_reducer";
@@ -52,6 +53,7 @@ import SettleExpensePairReducer from "./settle_expense_pair_reducer";
 import UpdateResidenceFlatReducer from "./update_residence_flat_reducer";
 import UpsertFlatRuleReducer from "./upsert_flat_rule_reducer";
 import UpsertSharedMemoryReducer from "./upsert_shared_memory_reducer";
+import UpsertShoppingAgentStateReducer from "./upsert_shopping_agent_state_reducer";
 
 // Import all procedure arg schemas
 import * as RunAiProcedure from "./run_ai_procedure";
@@ -275,6 +277,7 @@ const reducersSchema = __reducers(
   __reducerSchema("create_home_and_join", CreateHomeAndJoinReducer),
   __reducerSchema("create_residence", CreateResidenceReducer),
   __reducerSchema("delete_flat_rule", DeleteFlatRuleReducer),
+  __reducerSchema("delete_shopping_agent_state", DeleteShoppingAgentStateReducer),
   __reducerSchema("join_flat", JoinFlatReducer),
   __reducerSchema("record_expense", RecordExpenseReducer),
   __reducerSchema("record_expense_v_2", RecordExpenseV2Reducer),
@@ -284,6 +287,7 @@ const reducersSchema = __reducers(
   __reducerSchema("update_residence_flat", UpdateResidenceFlatReducer),
   __reducerSchema("upsert_flat_rule", UpsertFlatRuleReducer),
   __reducerSchema("upsert_shared_memory", UpsertSharedMemoryReducer),
+  __reducerSchema("upsert_shopping_agent_state", UpsertShoppingAgentStateReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */

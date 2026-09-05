@@ -84,7 +84,8 @@ import {
 } from './features/identity';
 import { sharedActionAvailability } from './features/household/availability.ts';
 import { AgentShopping } from './services/agentShopping';
-import { AgentCooking, type Recipe } from './services/agentCooking';
+import { AgentCooking, type Recipe, type RecipeIngredient } from './services/agentCooking';
+import { AgentInstamart, type InstamartCartPreparation, type InstamartShoppingState } from './services/agentInstamart';
 import { AgentBilling, type SplitResult } from './services/agentBilling';
 import { AIProvider } from './services/aiProvider';
 import { AuthManager, type AuthUser } from './services/authManager';
@@ -435,6 +436,8 @@ let attachedReceipt: string | undefined;
 let attachedReceiptName = '';
 let routeIntent: AgentIntent | 'idle' = 'idle';
 let currentRecipes = new Map<string, Recipe>();
+let currentInstamartCarts = new Map<string, InstamartCartPreparation>();
+const currentShoppingLists = new Map<string, RecipeIngredient[]>();
 let currentSplit: SplitResult | null = null;
 let currentBillDraft: BillDraft | null = null;
 let currentBillPhase: BillRecordPhase = { step: 'editing', acknowledgement: { status: 'idle' } };
@@ -1517,6 +1520,13 @@ async function publishSharedFacts(facts: MemoryFact[]): Promise<number> {
 
 function renderShoppingPlan(plan: Awaited<ReturnType<typeof AgentShopping.generateShoppingPlan>>) {
   const items = plan.items.slice(0, 8);
+  const listId = crypto.randomUUID();
+  currentShoppingLists.set(listId, items.map(item => ({
+    name: item.itemName,
+    quantity: item.suggestedQuantity,
+    unit: item.unit,
+    inPantry: false,
+  })));
   return `
     <div class="agent-result">
       <div class="result-heading"><h3>Restock plan</h3><span>${items.length} suggestions</span></div>
@@ -1528,11 +1538,126 @@ function renderShoppingPlan(plan: Awaited<ReturnType<typeof AgentShopping.genera
             <div class="row-action"><span>${item.suggestedQuantity} ${escapeHtml(item.unit)}</span><button data-add-pantry="${escapeHtml(item.itemName)}" data-quantity="${item.suggestedQuantity}" data-unit="${escapeHtml(item.unit)}">Add</button></div>
           </div>`).join('')}
       </div>
+      ${items.length ? `<button class="instamart-button shopping-checkout" data-shop-list="${escapeHtml(listId)}">Checkout groceries</button>` : ''}
     </div>`;
+}
+
+async function checkoutVisibleGroceries(button: HTMLButtonElement, ingredients: RecipeIngredient[]): Promise<void> {
+  button.textContent = 'Ordering groceries';
+  button.disabled = true;
+  button.parentElement?.querySelector('[data-instamart-review]')?.remove();
+  const sessionId = `conversation:${activeConversationId}`;
+  const previousState = synchronizedShoppingState(sessionId);
+  const requestedItems = ingredients
+    .filter(item => !item.inPantry)
+    .map(({ name, quantity, unit }) => ({ name, quantity, unit }));
+  const attemptState: InstamartShoppingState = {
+    sessionId,
+    phase: 'selected',
+    addressId: previousState?.addressId || '',
+    requestedItems,
+    selectedItems: previousState?.selectedItems || [],
+    cart: previousState?.cart ?? null,
+    payment: previousState?.payment ?? null,
+    toolContext: [
+      ...(previousState?.toolContext || []),
+      { name: 'checkout_requested', arguments: { items: requestedItems }, result: { status: 'started' } },
+    ].slice(-40),
+    pendingConfirmation: false,
+  };
+  try {
+    await persistShoppingState(attemptState);
+  } catch (cause) {
+    console.warn('Could not synchronize the initial shopping attempt:', cause);
+  }
+  try {
+    const result = await AgentInstamart.checkoutRecipe(ingredients, {
+      sessionId,
+      priorState: attemptState,
+      fallbackAddress: selectedHomeDeliveryAddress(),
+    });
+    const data = (result.order.data && typeof result.order.data === 'object' ? result.order.data : result.order) as Record<string, unknown>;
+    const orderId = String(data.orderId || 'created');
+    const unavailable = result.prepared.unavailable.map(item => item.name);
+    button.insertAdjacentHTML('afterend', `<div class="instamart-review" data-instamart-review><strong>Instamart order placed</strong><p>Order ${escapeHtml(orderId)} is confirmed. ${result.prepared.matches.length} product${result.prepared.matches.length === 1 ? '' : 's'} ordered.${unavailable.length ? ` Not found: ${escapeHtml(unavailable.join(', '))}.` : ''}</p></div>`);
+    button.textContent = 'Groceries ordered';
+    if (result.state) {
+      try {
+        await persistShoppingState(result.state);
+        showToast('Instamart order placed and shopping context synchronized.');
+      } catch (cause) {
+        console.warn('Order placed, but shopping context could not be synchronized:', cause);
+        showToast('Order placed. Shopping history will synchronize after Tabby reconnects.', 'error');
+      }
+    } else {
+      showToast('Instamart order placed successfully.');
+    }
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    try {
+      await persistShoppingState({
+        ...attemptState,
+        phase: 'failed',
+        toolContext: [
+          ...attemptState.toolContext,
+          { name: 'checkout_failed', arguments: { items: requestedItems }, result: { error: message } },
+        ].slice(-40),
+      });
+    } catch (stateCause) {
+      console.warn('Could not synchronize the failed shopping attempt:', stateCause);
+    }
+    button.textContent = 'Checkout groceries';
+    button.disabled = false;
+    showToast(message, 'error');
+  }
+}
+
+function selectedHomeDeliveryAddress(): { addressLine: string; label: string } | undefined {
+  const selected = activeHomeSelection();
+  if (!selected.flatId) return undefined;
+  const home = householdGateway.homes().find(row => String(row.id) === selected.flatId);
+  const residence = home && householdGateway.residences().find(row => row.id === home.residenceId);
+  const addressLine = [selected.flatNumber, residence?.address].filter(Boolean).join(', ').trim();
+  return addressLine ? { addressLine, label: selected.flatName || residence?.name || 'Tabby home' } : undefined;
+}
+
+function synchronizedShoppingState(sessionId: string): InstamartShoppingState | undefined {
+  const row = householdGateway.shoppingAgentStates().find(candidate => candidate.sessionId === sessionId);
+  if (!row) return undefined;
+  const parse = <T>(value: string, fallback: T): T => {
+    try { return JSON.parse(value) as T; } catch { return fallback; }
+  };
+  return {
+    sessionId: row.sessionId,
+    phase: row.phase as InstamartShoppingState['phase'],
+    addressId: row.addressId,
+    requestedItems: parse(row.requestedItemsJson, []),
+    selectedItems: parse(row.selectedItemsJson, []),
+    cart: parse(row.cartJson, null),
+    payment: parse(row.paymentJson, null),
+    toolContext: parse(row.toolContextJson, []),
+    pendingConfirmation: row.pendingConfirmation,
+  };
+}
+
+async function persistShoppingState(state: InstamartShoppingState): Promise<void> {
+  if (!connection || !currentSharedAvailability().available) throw new Error('Tabby is not synchronized with the selected home.');
+  await connection.reducers.upsertShoppingAgentState({
+    sessionId: state.sessionId,
+    phase: state.phase,
+    addressId: state.addressId,
+    requestedItemsJson: JSON.stringify(state.requestedItems),
+    selectedItemsJson: JSON.stringify(state.selectedItems),
+    cartJson: JSON.stringify(state.cart),
+    paymentJson: JSON.stringify(state.payment),
+    toolContextJson: JSON.stringify(state.toolContext.slice(-40)),
+    pendingConfirmation: state.pendingConfirmation,
+  });
 }
 
 function renderCookingPlan(plan: Awaited<ReturnType<typeof AgentCooking.generateRecipes>>) {
   currentRecipes = new Map(plan.recipes.map(recipe => [recipe.id, recipe]));
+  currentInstamartCarts = new Map();
   const recipes = plan.recipes.slice(0, 4);
   return `
     <div class="agent-result">
@@ -1562,7 +1687,9 @@ function renderCookingPlan(plan: Awaited<ReturnType<typeof AgentCooking.generate
                 ${recipe.tips ? `<p><strong>Kitchen note:</strong> ${escapeHtml(recipe.tips)}</p>` : ''}
               </details>
               <small>Suitable for ${escapeHtml(recipe.compatibleRoommates.join(', ') || 'the household')}</small>
-              <button data-cook-recipe="${escapeHtml(recipe.id)}">Cook this</button>
+              <div class="recipe-actions">
+                <button data-cook-recipe="${escapeHtml(recipe.id)}">Cook this</button>
+              </div>
             </article>`;
         }).join('')}
       </div>
@@ -1823,6 +1950,13 @@ async function recordCurrentBill() {
 
 function bindMessageActions() {
   const shared = currentSharedAvailability();
+  document.querySelectorAll<HTMLButtonElement>('[data-shop-list]').forEach(button => {
+    button.onclick = () => {
+      const items = currentShoppingLists.get(button.dataset.shopList || '');
+      if (items?.length) void checkoutVisibleGroceries(button, items);
+    };
+  });
+
   document.querySelectorAll<HTMLButtonElement>('[data-add-pantry]').forEach(button => {
     button.disabled = !shared.available;
     button.setAttribute('aria-disabled', String(!shared.available));
@@ -1851,6 +1985,7 @@ function bindMessageActions() {
     button.onclick = async () => {
       const recipe = currentRecipes.get(button.dataset.cookRecipe!);
       if (!recipe) return;
+      const toBuy = recipe.ingredients.filter(item => !item.inPantry);
       const pantry = pantryData();
       const changes = recipe.ingredients.filter(item => item.inPantry).flatMap(ingredient => {
         const match = pantry.find(item => {
@@ -1860,13 +1995,20 @@ function bindMessageActions() {
         });
         return match && match.quantity > 0 ? [{ name: match.name, quantityUsed: 1, unit: match.unit }] : [];
       });
-      if (!changes.length) return showToast('No tracked pantry quantities need changing for this recipe.');
-      cookingConfirmation = createCookingConfirmation(recipe.title, changes);
       const host = button.closest<HTMLElement>('.recipe-card') || button.parentElement;
-      const existing = host?.querySelector<HTMLElement>('[data-cooking-confirmation]');
-      if (existing) existing.outerHTML = renderCookingConfirmation(cookingConfirmation, shared.available);
-      else host?.insertAdjacentHTML('beforeend', renderCookingConfirmation(cookingConfirmation, shared.available));
-      const confirm = host?.querySelector<HTMLButtonElement>('[data-confirm-cooking]');
+      host?.querySelector<HTMLElement>('[data-cooking-workflow]')?.remove();
+      cookingConfirmation = changes.length ? createCookingConfirmation(recipe.title, changes) : null;
+      const pantryStep = cookingConfirmation
+        ? renderCookingConfirmation(cookingConfirmation, shared.available)
+        : `<section class="cooking-confirmation status-confirmed" data-cooking-confirmation><header><p class="eyebrow">READY TO SHOP</p><h2>${escapeHtml(recipe.title)}</h2></header><p>No tracked pantry quantities need updating.</p></section>`;
+      host?.insertAdjacentHTML('beforeend', `<section class="cooking-workflow" data-cooking-workflow>
+        ${pantryStep}
+        ${toBuy.length ? `<div class="cooking-checkout"><p>Order these items from Instamart:</p><ul>${toBuy.map(item => `<li><span>${escapeHtml(item.name)}</span><strong>${escapeHtml(`${item.quantity ?? ''} ${item.unit ?? ''}`.trim())}</strong></li>`).join('')}</ul><button class="instamart-button" data-cook-checkout>Checkout groceries</button></div>` : '<p class="cooking-checkout-complete">Everything needed is already at home.</p>'}
+      </section>`);
+      const workflow = host?.querySelector<HTMLElement>('[data-cooking-workflow]');
+      const checkout = workflow?.querySelector<HTMLButtonElement>('[data-cook-checkout]');
+      if (checkout) checkout.onclick = () => void checkoutVisibleGroceries(checkout, recipe.ingredients);
+      const confirm = workflow?.querySelector<HTMLButtonElement>('[data-confirm-cooking]');
       confirm?.addEventListener('click', async () => {
         if (!cookingConfirmation) return;
         confirm.disabled = true;
@@ -1880,10 +2022,18 @@ function bindMessageActions() {
           }
           cookingConfirmation = cookingAcknowledged(cookingConfirmation, action.payload.name);
         }
-        const rendered = host?.querySelector<HTMLElement>('[data-cooking-confirmation]');
+        const rendered = workflow?.querySelector<HTMLElement>('[data-cooking-confirmation]');
         if (rendered) rendered.outerHTML = renderCookingConfirmation(cookingConfirmation, shared.available);
         showToast(`Started ${recipe.title}. Pantry changes were acknowledged.`);
       });
+    };
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-shop-recipe]').forEach(button => {
+    button.onclick = async () => {
+      const recipe = currentRecipes.get(button.dataset.shopRecipe!);
+      if (!recipe) return;
+      await checkoutVisibleGroceries(button, recipe.ingredients);
     };
   });
 
@@ -1935,6 +2085,62 @@ function bindMessageActions() {
     });
     review.querySelector<HTMLButtonElement>('[data-record-bill]')?.addEventListener('click', () => void recordCurrentBill());
   });
+}
+
+function renderInstamartReview(prepared: InstamartCartPreparation): string {
+  const total = instamartCartTotal(prepared.cart);
+  return `
+    <section class="instamart-review" data-instamart-review>
+      <div class="instamart-review-heading"><strong>Instamart cart</strong><span>${prepared.matches.length} matched</span></div>
+      <ul>
+        ${prepared.matches.map(match => `<li><span>${escapeHtml(match.productName)} <small>${escapeHtml(match.pack)} × ${match.quantity}</small></span><strong>${formatRupees(match.price * match.quantity)}</strong></li>`).join('')}
+      </ul>
+      ${prepared.unavailable.length ? `<p class="instamart-unavailable">Not found: ${prepared.unavailable.map(item => escapeHtml(item.name)).join(', ')}</p>` : ''}
+      <dl>
+        <div><dt>Deliver to</dt><dd>${escapeHtml(prepared.deliveryAddress)}</dd></div>
+        <div><dt>Payment</dt><dd>${escapeHtml(prepared.paymentMethod)}</dd></div>
+        <div><dt>Live total</dt><dd>${total === null ? 'Shown by Instamart at checkout' : formatRupees(total)}</dd></div>
+      </dl>
+      <p>This is a test order. Review the matched products, total, payment method, and address before placing it.</p>
+      <button class="instamart-confirm" data-confirm-instamart="${escapeHtml(prepared.sessionId)}">Place order</button>
+    </section>`;
+}
+
+function bindInstamartConfirmation(host: HTMLElement | null): void {
+  const button = host?.querySelector<HTMLButtonElement>('[data-confirm-instamart]');
+  if (!button) return;
+  button.onclick = async () => {
+    const sessionId = button.dataset.confirmInstamart || '';
+    if (!currentInstamartCarts.has(sessionId)) return;
+    button.disabled = true;
+    button.textContent = 'Placing order';
+    try {
+      const result = await AgentInstamart.checkout(sessionId);
+      currentInstamartCarts.delete(sessionId);
+      const data = (result.data && typeof result.data === 'object' ? result.data : result) as Record<string, unknown>;
+      const orderId = String(data.orderId || 'created');
+      const review = host?.querySelector<HTMLElement>('[data-instamart-review]');
+      if (review) review.innerHTML = `<strong>Instamart order placed</strong><p>Order ${escapeHtml(orderId)} is confirmed in the test environment. No real purchase was made.</p>`;
+      showToast('Instamart order placed successfully.');
+    } catch (cause) {
+      button.disabled = false;
+      button.textContent = 'Place order';
+      showToast(cause instanceof Error ? cause.message : String(cause), 'error');
+    }
+  };
+}
+
+function instamartCartTotal(cart: Record<string, unknown>): number | null {
+  const pricing = (cart.pricing && typeof cart.pricing === 'object' ? cart.pricing : {}) as Record<string, unknown>;
+  for (const value of [pricing.toPay, pricing.to_pay, pricing.total, cart.total, cart.cartTotal]) {
+    const number = Number(value);
+    if (Number.isFinite(number) && number >= 0) return number;
+  }
+  return null;
+}
+
+function formatRupees(value: number): string {
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
 }
 
 function renderHeaderAndRailBadges() {
@@ -2163,6 +2369,7 @@ function connectToDatabase() {
 
       databaseToken = token;
       storeDatabaseToken(token);
+      AgentInstamart.useDatabaseToken(token);
       currentIdentity = identity.toHexString();
       AIProvider.setIdentityScope(currentIdentity);
       const accountTokenKey = `${tokenKey}:${currentIdentity}`;

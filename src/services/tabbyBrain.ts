@@ -28,7 +28,7 @@ export interface BrainAnalysis {
 const INTENT_RULES: Array<[AgentIntent, RegExp]> = [
   ['billing', /\b(bill|expense|receipt|split|paid|owe|owed|cost|total|reimburse)\b|(?:₹|rs\.?|inr|\$)\s*[\d,]+|(?:^|\n).+[-:]\s*\d+(?:\.\d{1,2})?\s*$/im],
   ['context', /\b(i like|i love|i prefer|i hate|i don't like|i dislike|i avoid|i eat|i don't eat|except when|allergic|allergy|vegetarian|vegan|eggetarian|halal|jain|diet|preference|preferences|who likes|who eats|what do we know|remember)\b/i],
-  ['chef', /\b(recipe|recipes|how (?:to|do i|can i) (?:cook|make|bake|prepare)|what can (?:i|we) (?:cook|make)|what should (?:i|we) (?:cook|make)|suggest (?:a |some )?(?:recipe|meal|dinner|lunch)|let's cook|cook (?:something|dinner|lunch|breakfast))\b/i],
+  ['chef', /\b(recipe|recipes|how (?:to|do i|can i) (?:cook|make|bake|prepare)|what can (?:i|we) (?:cook|make)|what should (?:i|we) (?:cook|make)|suggest (?:a |some )?(?:recipe|meal|dinner|lunch)|let's cook|cook (?:something|dinner|lunch|breakfast)|(?:(?:i\s+)?(?:want|wanna|would like|plan|planning)\s+)?(?:to\s+)?(?:cook|make|bake|prepare)\s+(?:a\s+|an\s+|some\s+|the\s+)?[a-z][a-z -]+)\b/i],
   ['grocery', /\b(bought|buy|pantry|grocery|groceries|restock|stock|shopping|ran out|need more)\b/i],
 ];
 
@@ -165,7 +165,7 @@ Return valid JSON with "intent" and "facts".`
     }
 
     // Strict Guard: Chef intent should ONLY trigger on explicit recipe or cooking requests
-    const isExplicitCookingRequest = /\b(?:recipe|recipes|how (?:to|do i|can i) (?:cook|make|bake|prepare)|what can (?:i|we) (?:cook|make)|what should (?:i|we) (?:cook|make)|suggest (?:a |some )?(?:recipe|meal|dinner|lunch)|let's cook|cook (?:something|dinner|lunch|breakfast)|prepare (?:a |some )?(?:meal|dinner|lunch|breakfast))\b/i.test(message);
+    const isExplicitCookingRequest = /\b(?:recipe|recipes|how (?:to|do i|can i) (?:cook|make|bake|prepare)|what can (?:i|we) (?:cook|make)|what should (?:i|we) (?:cook|make)|suggest (?:a |some )?(?:recipe|meal|dinner|lunch)|let's cook|cook (?:something|dinner|lunch|breakfast)|(?:(?:i\s+)?(?:want|wanna|would like|plan|planning)\s+)?(?:to\s+)?(?:cook|make|bake|prepare)\s+(?:a\s+|an\s+|some\s+|the\s+)?[a-z][a-z -]+)\b/i.test(message);
 
     if (facts.length > 0 || !isExplicitCookingRequest) {
       if (intent === 'chef' && !isExplicitCookingRequest) {

@@ -1,0 +1,24 @@
+{
+  "name": "@tabby/instamart-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/httpServer.ts",
+    "start": "tsx src/httpServer.ts",
+    "mcp": "tsx src/mcpProxy.ts",
+    "build": "tsc --noEmit",
+    "test": "tsx tests/run.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.0",
+    "dotenv": "^17.4.2",
+    "openai": "^7.10.0",
+    "spacetimedb": "2.10.*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.7.2"
+  }
+}

@@ -12,8 +12,10 @@ The shopping and cooking agents work with a deterministic local planning engine 
 
 ```bash
 npm install
-npm run dev -- --host 0.0.0.0
+npm run dev
 ```
+
+The root install includes the `instamart-mcp` workspace. `npm run dev` starts both the Vite application and the Instamart developer agent/HTTP bridge; stopping the parent command stops both. No second terminal or Instamart startup command is needed.
 
 Open the Vite address shown in the terminal. By default it connects to the cloud-hosted `tabby` database at Maincloud, so other people can share the same household state. Open it in multiple tabs to see realtime synchronization.
 

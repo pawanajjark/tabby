@@ -15,6 +15,7 @@ import CreateConversationReducer from "../create_conversation_reducer";
 import CreateHomeAndJoinReducer from "../create_home_and_join_reducer";
 import CreateResidenceReducer from "../create_residence_reducer";
 import DeleteFlatRuleReducer from "../delete_flat_rule_reducer";
+import DeleteShoppingAgentStateReducer from "../delete_shopping_agent_state_reducer";
 import JoinFlatReducer from "../join_flat_reducer";
 import RecordExpenseReducer from "../record_expense_reducer";
 import RecordExpenseV2Reducer from "../record_expense_v_2_reducer";
@@ -24,6 +25,7 @@ import SettleExpensePairReducer from "../settle_expense_pair_reducer";
 import UpdateResidenceFlatReducer from "../update_residence_flat_reducer";
 import UpsertFlatRuleReducer from "../upsert_flat_rule_reducer";
 import UpsertSharedMemoryReducer from "../upsert_shared_memory_reducer";
+import UpsertShoppingAgentStateReducer from "../upsert_shopping_agent_state_reducer";
 
 export type AddPantryItemParams = __Infer<typeof AddPantryItemReducer>;
 export type AppendConversationMessageParams = __Infer<typeof AppendConversationMessageReducer>;
@@ -34,6 +36,7 @@ export type CreateConversationParams = __Infer<typeof CreateConversationReducer>
 export type CreateHomeAndJoinParams = __Infer<typeof CreateHomeAndJoinReducer>;
 export type CreateResidenceParams = __Infer<typeof CreateResidenceReducer>;
 export type DeleteFlatRuleParams = __Infer<typeof DeleteFlatRuleReducer>;
+export type DeleteShoppingAgentStateParams = __Infer<typeof DeleteShoppingAgentStateReducer>;
 export type JoinFlatParams = __Infer<typeof JoinFlatReducer>;
 export type RecordExpenseParams = __Infer<typeof RecordExpenseReducer>;
 export type RecordExpenseV2Params = __Infer<typeof RecordExpenseV2Reducer>;
@@ -43,4 +46,5 @@ export type SettleExpensePairParams = __Infer<typeof SettleExpensePairReducer>;
 export type UpdateResidenceFlatParams = __Infer<typeof UpdateResidenceFlatReducer>;
 export type UpsertFlatRuleParams = __Infer<typeof UpsertFlatRuleReducer>;
 export type UpsertSharedMemoryParams = __Infer<typeof UpsertSharedMemoryReducer>;
+export type UpsertShoppingAgentStateParams = __Infer<typeof UpsertShoppingAgentStateReducer>;
 

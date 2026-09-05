@@ -139,12 +139,13 @@ Provide output as a valid JSON object matching this schema:
       }
     }
 
-    return this.generateHeuristicRecipes(pantryItems, roommates);
+    return this.generateHeuristicRecipes(pantryItems, roommates, request);
   }
 
   private static generateHeuristicRecipes(
     pantryItems: PantryItemData[],
-    roommates: RoommateProfile[]
+    roommates: RoommateProfile[],
+    request = '',
   ): CookingPlan {
     const pantryNames = pantryItems.map(p => p.name.toLowerCase().trim());
     const has = (name: string) => pantryNames.some(p => p.includes(name.toLowerCase()));
@@ -161,7 +162,40 @@ Provide output as a valid JSON object matching this schema:
       return true;
     };
 
+    const requestedBiryani = /\bbir(?:yani|iyani)\b/i.test(request);
+    const requestedProtein = /\bmutton\b/i.test(request) ? 'mutton' : /\bchicken\b/i.test(request) ? 'chicken' : 'mixed vegetables';
+    const biryaniTags = requestedProtein === 'mixed vegetables' ? ['Vegetarian', 'Gluten-Free'] : ['Non-Veg', 'Gluten-Free'];
+    const biryaniRecipe: Recipe = {
+      id: 'requested_biryani',
+      title: requestedProtein === 'mixed vegetables' ? 'Fragrant Vegetable Biryani' : `Fragrant ${requestedProtein[0].toUpperCase()}${requestedProtein.slice(1)} Biryani`,
+      description: 'Layered basmati rice, aromatics, warming spices, and a practical dum-style finish.',
+      prepTimeMinutes: 20,
+      cookTimeMinutes: 35,
+      servings: roommates.length || 2,
+      difficulty: 'Medium',
+      dietaryTags: biryaniTags,
+      compatibleRoommates: [],
+      ingredients: [
+        { name: 'basmati rice', quantity: 500, unit: 'g', inPantry: has('basmati') || has('rice'), pantryQuantity: getQty('rice') },
+        { name: requestedProtein, quantity: requestedProtein === 'mixed vegetables' ? 500 : 750, unit: 'g', inPantry: has(requestedProtein), pantryQuantity: getQty(requestedProtein) },
+        { name: 'onions', quantity: 3, unit: 'items', inPantry: has('onion'), pantryQuantity: getQty('onion') },
+        { name: 'tomatoes', quantity: 2, unit: 'items', inPantry: has('tomato'), pantryQuantity: getQty('tomato') },
+        { name: 'yogurt', quantity: 200, unit: 'g', inPantry: has('yogurt') || has('curd'), pantryQuantity: getQty('yogurt') },
+        { name: 'biryani masala', quantity: 1, unit: 'pack', inPantry: has('biryani masala') || has('garam masala'), pantryQuantity: 1 },
+        { name: 'cooking oil', quantity: 3, unit: 'tbsp', inPantry: has('oil'), pantryQuantity: getQty('oil') },
+      ],
+      missingCount: 0,
+      instructions: [
+        'Rinse and soak the basmati rice for 20 minutes, then parboil it with salt until about three-quarters cooked.',
+        'Brown sliced onions in oil. Add tomatoes, biryani masala, yogurt, and the vegetables or meat; cook until the filling is nearly done.',
+        'Layer the rice over the filling, cover tightly, and cook on low heat for 15 minutes.',
+        'Rest for 5 minutes, fluff gently, and serve hot.',
+      ],
+      tips: 'Keep the rice slightly firm before layering so the grains remain separate during dum cooking.',
+    };
+
     const templateRecipes: Recipe[] = [
+      ...(requestedBiryani ? [biryaniRecipe] : []),
       {
         id: 'garlic_butter_pasta',
         title: 'Aglio e Olio Pasta with Sautéed Veggies',
@@ -278,8 +312,13 @@ Provide output as a valid JSON object matching this schema:
       return recipe;
     });
 
-    // Sort by fewest missing ingredients
-    processedRecipes.sort((a, b) => a.missingCount - b.missingCount);
+    // Keep the dish the user explicitly requested first, then rank the remaining
+    // suggestions by how much of each recipe is already in the pantry.
+    processedRecipes.sort((a, b) => {
+      if (a.id === 'requested_biryani') return -1;
+      if (b.id === 'requested_biryani') return 1;
+      return a.missingCount - b.missingCount;
+    });
 
     return {
       headline: `Tabby found ${processedRecipes.filter(r => r.missingCount === 0).length} instant pantry recipes and ${processedRecipes.length} curated meal ideas.`,

@@ -258,6 +258,50 @@ function senderFlatId(ctx: any): bigint {
   return memberRow.flat_id;
 }
 
+export const upsert_shopping_agent_state = spacetimedb.reducer(
+  {
+    session_id: t.string(),
+    phase: t.string(),
+    address_id: t.string(),
+    requested_items_json: t.string(),
+    selected_items_json: t.string(),
+    cart_json: t.string(),
+    payment_json: t.string(),
+    tool_context_json: t.string(),
+    pending_confirmation: t.bool(),
+  },
+  (ctx, args) => {
+    const sessionId = args.session_id.trim();
+    const flatId = senderFlatId(ctx);
+    if (!sessionId || sessionId.length > 128) throw new SenderError('A valid shopping session ID is required.');
+    for (const value of [args.requested_items_json, args.selected_items_json, args.cart_json, args.payment_json, args.tool_context_json]) {
+      if (value.length > 200_000) throw new SenderError('Shopping state payload is too large.');
+      if (value) {
+        try { JSON.parse(value); } catch { throw new SenderError('Shopping state must contain valid JSON.'); }
+      }
+    }
+    const existing = ctx.db.shoppingAgentState.session_id.find(sessionId);
+    if (existing && existing.owner.toHexString() !== ctx.sender.toHexString()) {
+      throw new SenderError('Shopping session belongs to another account.');
+    }
+    const row = { ...args, session_id: sessionId, owner: ctx.sender, flat_id: flatId, updated_at: ctx.timestamp };
+    if (existing) ctx.db.shoppingAgentState.session_id.update(row);
+    else ctx.db.shoppingAgentState.insert(row);
+  },
+);
+
+export const delete_shopping_agent_state = spacetimedb.reducer(
+  { session_id: t.string() },
+  (ctx, { session_id }) => {
+    const existing = ctx.db.shoppingAgentState.session_id.find(session_id);
+    if (!existing) return;
+    if (existing.owner.toHexString() !== ctx.sender.toHexString()) {
+      throw new SenderError('Shopping session belongs to another account.');
+    }
+    ctx.db.shoppingAgentState.session_id.delete(session_id);
+  },
+);
+
 function ensureDefaultResidenceAndFlat(ctx: any): { residenceId: bigint; flatId: bigint } {
   let residences = [...ctx.db.residence.iter()];
   if (residences.length === 0) {

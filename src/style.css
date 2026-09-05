@@ -172,6 +172,15 @@
 .cooking-confirmation, .bill-review { margin-top: 16px; border: 1px solid var(--border); border-radius: 16px; padding: 16px; background: var(--surface); }
 .cooking-confirmation ul { display: grid; gap: 7px; padding-left: 20px; }
 .cooking-confirmation button, .bill-review button { min-height: 44px; }
+.cooking-workflow { display: grid; gap: 12px; margin-top: 16px; }
+.cooking-workflow .cooking-confirmation { margin-top: 0; }
+.cooking-checkout { padding: 14px 16px; border: 1px solid rgba(22, 101, 52, 0.24); border-radius: 16px; background: rgba(22, 101, 52, 0.055); }
+.cooking-checkout p { margin: 0; color: var(--stone); }
+.cooking-checkout ul { display: grid; gap: 0; margin: 10px 0 0; padding: 0; list-style: none; }
+.cooking-checkout li { display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; border-bottom: 1px solid rgba(22, 101, 52, 0.16); }
+.cooking-checkout li span { color: var(--ink); }
+.cooking-checkout li strong { color: var(--stone); font-size: 0.82em; white-space: nowrap; }
+.cooking-checkout-complete { margin: 0; color: #166534; font-weight: 650; }
 .bill-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .bill-fields label, .bill-person { display: grid; gap: 6px; }
 .bill-line { border-top: 1px solid var(--border); padding: 14px 0; }
@@ -1010,6 +1019,55 @@ summary:focus-visible {
 .recipe-steps li { padding: 5px 0 5px 20px; list-style: decimal; }
 .recipe-card > small { margin-top: auto; color: var(--stone); font-size: 0.63rem; }
 .recipe-card button { align-self: flex-start; margin-top: 13px; }
+
+.recipe-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.agent-result .instamart-button,
+.recipe-card .instamart-confirm {
+  color: #166534;
+  border-color: rgba(22, 101, 52, 0.4);
+}
+
+.agent-result .instamart-button:hover,
+.recipe-card .instamart-confirm:hover {
+  color: var(--paper);
+  background: #166534;
+  border-color: #166534;
+}
+
+.shopping-checkout { margin-top: 14px; }
+
+.instamart-review {
+  padding: 13px;
+  margin-top: 14px;
+  color: var(--stone);
+  background: rgba(22, 101, 52, 0.055);
+  border: 1px solid rgba(22, 101, 52, 0.24);
+  border-radius: 9px;
+}
+
+.instamart-review-heading,
+.instamart-review li,
+.instamart-review dl > div {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.instamart-review-heading { color: #166534; font-size: 0.68rem; }
+.instamart-review ul { padding: 0; margin: 10px 0; list-style: none; }
+.instamart-review li { padding: 6px 0; font-size: 0.64rem; border-bottom: 1px solid rgba(22, 101, 52, 0.14); }
+.instamart-review li small { display: block; margin-top: 2px; color: var(--stone); }
+.instamart-review dl { margin: 9px 0; font-size: 0.63rem; }
+.instamart-review dl > div { padding: 3px 0; }
+.instamart-review dt { color: var(--stone); }
+.instamart-review dd { margin: 0; color: var(--ink); text-align: right; }
+.instamart-review .instamart-unavailable { color: var(--clay-dark); }
+.instamart-review > p { margin: 9px 0 0; font-size: 0.62rem; }
 
 .split-layout {
   display: grid;
