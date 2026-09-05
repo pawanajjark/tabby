@@ -4,6 +4,31 @@ export interface RoommateListRow {
   displayName: string;
 }
 
+export interface PeopleListPresentation {
+  countLabel: string;
+  emptyMessage: string;
+  showRows: boolean;
+}
+
+export function peopleListPresentation(
+  isDatabaseSynchronized: boolean,
+  count: number,
+): PeopleListPresentation {
+  if (!isDatabaseSynchronized) {
+    return {
+      countLabel: '—',
+      emptyMessage: 'Loading people…',
+      showRows: false,
+    };
+  }
+
+  return {
+    countLabel: String(count),
+    emptyMessage: 'People appear after they choose Join Flat.',
+    showRows: count > 0,
+  };
+}
+
 export function selectFlatRoommates(
   rows: RoommateListRow[],
   activeFlatId: string,

@@ -6,7 +6,7 @@ import { AgentBilling, type SplitResult } from './services/agentBilling';
 import { AIProvider } from './services/aiProvider';
 import { AuthManager, type AuthUser } from './services/authManager';
 import { ResidenceManager, type ResidenceItem, type FlatItem, type ActiveFlatSelection } from './services/residenceManager';
-import { selectFlatRoommates } from './services/roommateList';
+import { peopleListPresentation, selectFlatRoommates } from './services/roommateList';
 import {
   HouseholdConfigManager,
   type DietaryTag,
@@ -765,22 +765,23 @@ function clearAllTabbyData() {
 
 function renderContextPanel() {
   const roommates = getRoommates();
+  const peoplePresentation = peopleListPresentation(isDatabaseSynchronized, roommates.length);
   const memory = getSharedContext();
   const pantry = pantryData().filter(item => item.quantity > 0).sort((a, b) => a.name.localeCompare(b.name));
   const rules = flatRulesData();
 
-  document.querySelector('#people-count')!.textContent = String(roommates.length);
+  document.querySelector('#people-count')!.textContent = peoplePresentation.countLabel;
   document.querySelector('#memory-count')!.textContent = String(memory.length);
   document.querySelector('#pantry-count')!.textContent = String(pantry.length);
   document.querySelector('#rules-count')!.textContent = String(rules.length);
 
-  document.querySelector('#people-list')!.innerHTML = roommates.length
+  document.querySelector('#people-list')!.innerHTML = peoplePresentation.showRows
     ? roommates.map(roommate => `
       <div class="person-row">
         <span class="avatar">${escapeHtml(roommate.displayName.slice(0, 1).toUpperCase())}</span>
         <span><strong>${escapeHtml(roommate.displayName)}</strong><small>${roommate.identityHex === currentIdentity ? 'You' : 'Housemate'}</small></span>
       </div>`).join('')
-    : '<p class="empty-state">People appear after they choose Join Flat.</p>';
+    : `<p class="empty-state">${escapeHtml(peoplePresentation.emptyMessage)}</p>`;
 
   document.querySelector('#memory-list')!.innerHTML = memory.length
     ? memory.slice(0, 8).map(fact => `
