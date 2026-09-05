@@ -29,12 +29,12 @@ const initialModel = envModel || localStorage.getItem('tabby_openai_model')?.tri
 if (envKey) {
   try {
     localStorage.setItem('tabby_openai_api_key', envKey);
-  } catch {}
+  } catch { }
 }
 if (envModel) {
   try {
     localStorage.setItem('tabby_openai_model', envModel);
-  } catch {}
+  } catch { }
 }
 
 export class AIProvider {
@@ -54,7 +54,7 @@ export class AIProvider {
       this.modelName = sanitizeModel(modelName);
       try {
         localStorage.setItem('tabby_openai_model', this.modelName);
-      } catch {}
+      } catch { }
     }
     if (apiKey !== undefined) {
       this.directApiKey = apiKey.trim();
@@ -64,7 +64,7 @@ export class AIProvider {
         } else {
           localStorage.removeItem('tabby_openai_api_key');
         }
-      } catch {}
+      } catch { }
     }
   }
 
