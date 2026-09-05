@@ -1066,6 +1066,9 @@ summary:focus-visible {
 .instamart-review dl > div { padding: 3px 0; }
 .instamart-review dt { color: var(--stone); }
 .instamart-review dd { margin: 0; color: var(--ink); text-align: right; }
+.instamart-review .instamart-discount dt,
+.instamart-review .instamart-discount dd { color: #166534; font-weight: 700; }
+.instamart-review .instamart-payable { margin-top: 4px; padding-top: 7px; border-top: 1px solid rgba(22, 101, 52, 0.24); font-weight: 700; }
 .instamart-review .instamart-unavailable { color: var(--clay-dark); }
 .instamart-review > p { margin: 9px 0 0; font-size: 0.62rem; }
 

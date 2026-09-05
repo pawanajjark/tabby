@@ -20,6 +20,9 @@ test('the recipe action reveals missing items and prepares a detailed checkout r
   assert.match(mainSource, /renderInstamartReview\(prepared\)/);
   assert.match(mainSource, /Confirm and place order/);
   assert.match(mainSource, /AgentInstamart\.checkout\(sessionId, priorState\)/);
+  assert.match(mainSource, /Discount \(\$\{pricing\.coupon\}\)/);
+  assert.match(mainSource, /pricing\.discount > 0/);
+  assert.match(mainSource, /Total to pay/);
 });
 
 test('every shopping entry point requires a synchronized selected home', () => {

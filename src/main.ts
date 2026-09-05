@@ -2141,7 +2141,8 @@ function bindMessageActions() {
 }
 
 function renderInstamartReview(prepared: InstamartCartPreparation): string {
-  const total = instamartCartTotal(prepared.cart);
+  const pricing = instamartCartPricing(prepared.cart);
+  const discountLabel = pricing.coupon ? `Discount (${pricing.coupon})` : 'Discount';
   return `
     <section class="instamart-review" data-instamart-review>
       <div class="instamart-review-heading"><strong>Instamart cart</strong><span>${prepared.matches.length} matched</span></div>
@@ -2152,7 +2153,9 @@ function renderInstamartReview(prepared: InstamartCartPreparation): string {
       <dl>
         <div><dt>Deliver to</dt><dd>${escapeHtml(prepared.deliveryAddress)}</dd></div>
         <div><dt>Payment</dt><dd>${escapeHtml(prepared.paymentMethod)}</dd></div>
-        <div><dt>Live total</dt><dd>${total === null ? 'Shown by Instamart at checkout' : formatRupees(total)}</dd></div>
+        ${pricing.itemTotal === null ? '' : `<div><dt>Item total</dt><dd>${formatRupees(pricing.itemTotal)}</dd></div>`}
+        ${pricing.discount > 0 ? `<div class="instamart-discount"><dt>${escapeHtml(discountLabel)}</dt><dd>−${formatRupees(pricing.discount)}</dd></div>` : ''}
+        <div class="instamart-payable"><dt>Total to pay</dt><dd>${pricing.total === null ? 'Shown by Instamart at checkout' : formatRupees(pricing.total)}</dd></div>
       </dl>
       <p>This is a test order. Review the matched products, total, payment method, and address before placing it.</p>
       <button class="instamart-confirm" data-confirm-instamart="${escapeHtml(prepared.sessionId)}">Confirm and place order</button>
@@ -2194,13 +2197,27 @@ function bindInstamartConfirmation(host: HTMLElement | null): void {
   };
 }
 
-function instamartCartTotal(cart: Record<string, unknown>): number | null {
+function instamartCartPricing(cart: Record<string, unknown>): { itemTotal: number | null; discount: number; total: number | null; coupon: string } {
   const pricing = (cart.pricing && typeof cart.pricing === 'object' ? cart.pricing : {}) as Record<string, unknown>;
-  for (const value of [pricing.toPay, pricing.to_pay, pricing.total, cart.total, cart.cartTotal]) {
-    const number = Number(value);
-    if (Number.isFinite(number) && number >= 0) return number;
-  }
-  return null;
+  const amount = (values: unknown[], fallback: number | null): number | null => {
+    for (const value of values) {
+      const number = Number(value);
+      if (Number.isFinite(number) && number >= 0) return number;
+    }
+    return fallback;
+  };
+  const couponValue = cart.couponApplied ?? cart.appliedCoupon ?? pricing.couponCode;
+  const coupon = typeof couponValue === 'string'
+    ? couponValue
+    : couponValue && typeof couponValue === 'object'
+      ? String((couponValue as Record<string, unknown>).code ?? (couponValue as Record<string, unknown>).couponCode ?? '')
+      : '';
+  return {
+    itemTotal: amount([pricing.itemTotal, pricing.item_total, pricing.subtotal, cart.itemTotal], null),
+    discount: amount([pricing.couponDiscount, pricing.coupon_discount, pricing.discount, cart.discount], 0) ?? 0,
+    total: amount([pricing.toPay, pricing.to_pay, pricing.total, cart.total, cart.cartTotal], null),
+    coupon,
+  };
 }
 
 function formatRupees(value: number): string {

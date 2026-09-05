@@ -16,6 +16,8 @@ test('prepares a recipe cart and requires confirmation before developer checkout
   assert.equal(prepared.matches.length, 2);
   assert.equal(prepared.matches[0].quantity, 2);
   assert.equal(prepared.paymentMethod, 'COD');
+  assert.equal((prepared.cart as any).couponApplied, 'DEV10');
+  assert.equal((prepared.cart as any).pricing.couponDiscount, 10);
   await assert.rejects(() => agent.checkout(prepared.sessionId, false), /Explicit user confirmation/);
 
   const restartedAgent = new RecipeCheckoutAgent(client, state);
