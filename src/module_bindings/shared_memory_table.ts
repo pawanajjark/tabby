@@ -12,9 +12,11 @@ import {
 
 export default __t.row({
   id: __t.u64().primaryKey(),
-  title: __t.string(),
-  amountPaise: __t.i64().name("amount_paise"),
-  paidBy: __t.identity().name("paid_by"),
+  subjectIdentity: __t.identity().name("subject_identity"),
+  subjectName: __t.string().name("subject_name"),
   category: __t.string(),
-  breakdownJson: __t.string().name("breakdown_json"),
+  memoryKey: __t.string().name("memory_key"),
+  value: __t.string(),
+  sourceMessageId: __t.u64().name("source_message_id"),
+  updatedAt: __t.timestamp().name("updated_at"),
 });

@@ -1,94 +1,221 @@
-// src/services/aiProvider.ts
-import { ChatOpenAI } from '@langchain/openai';
-import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+export interface BackendAIRequest {
+  prompt: string;
+  instructions: string;
+  imageDataUrl: string;
+  jsonMode: boolean;
+}
 
-const savedModelName = localStorage.getItem('tabby_openai_model');
-const requestedModelName = savedModelName || import.meta.env.VITE_OPENAI_MODEL || '';
-const configuredModelName = requestedModelName === 'gpt-5.6-sol' ? 'gpt-4.1-mini' : requestedModelName;
+export interface AIConfigSnapshot {
+  apiKey: string;
+  model: string;
+}
+
+type BackendAIRunner = (request: BackendAIRequest) => Promise<string>;
+
+function sanitizeModel(model?: string): string {
+  const clean = model?.trim();
+  if (!clean || clean === 'gpt-5.6-sol' || clean === 'gpt-4.1-mini') {
+    return 'gpt-4o-mini';
+  }
+  return clean;
+}
+
+const envKey = (import.meta.env.VITE_OPENAI_API_KEY as string | undefined)?.trim() || '';
+const envModel = sanitizeModel(import.meta.env.VITE_OPENAI_MODEL as string | undefined);
+const initialKey = localStorage.getItem('tabby_openai_api_key')?.trim() || envKey;
+const initialModel = sanitizeModel(localStorage.getItem('tabby_openai_model')?.trim() || envModel);
+
+// Save initial key if from env
+if (initialKey) {
+  try {
+    localStorage.setItem('tabby_openai_api_key', initialKey);
+    localStorage.setItem('tabby_openai_model', initialModel);
+  } catch {
+    // ignore localStorage errors in restricted environments
+  }
+}
 
 export class AIProvider {
-  private static apiKey = localStorage.getItem('tabby_openai_api_key') || import.meta.env.VITE_OPENAI_API_KEY || '';
-  private static modelName = configuredModelName || 'gpt-4.1-mini';
+  private static runner: BackendAIRunner | null = null;
+  private static backendConfigured = false;
+  private static directApiKey = initialKey;
+  private static modelName = initialModel;
+  private static lastSnapshot: AIConfigSnapshot | null = null;
 
-  static setConfig(apiKey: string, modelName?: string) {
-    this.apiKey = apiKey.trim();
-    if (this.apiKey) {
-      localStorage.setItem('tabby_openai_api_key', this.apiKey);
-    } else {
-      localStorage.removeItem('tabby_openai_api_key');
-    }
-
-    if (modelName?.trim()) {
-      this.modelName = modelName.trim();
-      localStorage.setItem('tabby_openai_model', this.modelName);
-    }
+  static configureBackend(runner: BackendAIRunner) {
+    this.runner = runner;
   }
 
-  static getApiKey(): string {
-    return this.apiKey;
+  static setConfigured(configured: boolean, modelName?: string, apiKey?: string) {
+    this.backendConfigured = configured;
+    if (modelName?.trim()) {
+      this.modelName = sanitizeModel(modelName);
+      try {
+        localStorage.setItem('tabby_openai_model', this.modelName);
+      } catch {}
+    }
+    if (apiKey !== undefined) {
+      this.directApiKey = apiKey.trim();
+      try {
+        if (this.directApiKey) {
+          localStorage.setItem('tabby_openai_api_key', this.directApiKey);
+        } else {
+          localStorage.removeItem('tabby_openai_api_key');
+        }
+      } catch {}
+    }
   }
 
   static getModelName(): string {
     return this.modelName;
   }
 
+  static getApiKey(): string {
+    return this.directApiKey;
+  }
+
   static hasApiKey(): boolean {
-    return !!this.apiKey;
+    return Boolean(this.directApiKey) || this.backendConfigured;
   }
 
-  static getModel(): ChatOpenAI | null {
-    if (!this.apiKey) return null;
-    return new ChatOpenAI({
-      openAIApiKey: this.apiKey,
-      modelName: this.modelName,
-      temperature: 0.2,
-      configuration: {
-        dangerouslyAllowBrowser: true,
+  static saveUndoSnapshot(apiKey: string, model: string) {
+    this.lastSnapshot = { apiKey, model };
+  }
+
+  static getLastUndoSnapshot(): AIConfigSnapshot | null {
+    return this.lastSnapshot;
+  }
+
+  static clearUndoSnapshot() {
+    this.lastSnapshot = null;
+  }
+
+  private static async directFetch(request: BackendAIRequest, overrideKey?: string, overrideModel?: string): Promise<string> {
+    const key = overrideKey?.trim() || this.directApiKey;
+    if (!key) throw new Error('No OpenAI API key configured.');
+
+    const model = sanitizeModel(overrideModel || this.modelName);
+    const messages: Array<{ role: string; content: unknown }> = [];
+
+    if (request.instructions.trim()) {
+      messages.push({ role: 'system', content: request.instructions.trim() });
+    }
+
+    if (request.imageDataUrl.trim()) {
+      messages.push({
+        role: 'user',
+        content: [
+          { type: 'text', text: request.prompt },
+          { type: 'image_url', image_url: { url: request.imageDataUrl.trim() } },
+        ],
+      });
+    } else {
+      messages.push({ role: 'user', content: request.prompt });
+    }
+
+    const requestBody: Record<string, unknown> = {
+      model,
+      messages,
+      max_tokens: 1800,
+    };
+    if (request.jsonMode) {
+      requestBody.response_format = { type: 'json_object' };
+    }
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${key}`,
       },
+      body: JSON.stringify(requestBody),
     });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const message = (errorData as { error?: { message?: string } })?.error?.message || response.statusText;
+      throw new Error(`OpenAI request failed (${response.status}): ${message}`);
+    }
+
+    const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    const content = data.choices?.[0]?.message?.content?.trim();
+    if (!content) throw new Error('OpenAI returned an empty response.');
+    return content;
   }
 
-  static async generateJson<T>(prompt: string, systemInstruction?: string, imageBase64?: string): Promise<T | null> {
-    const model = this.getModel();
-    if (!model) return null;
+  static async executeRequest(request: BackendAIRequest): Promise<string> {
+    if (this.runner && this.backendConfigured) {
+      try {
+        return await this.runner(request);
+      } catch (backendError) {
+        console.warn('Backend OpenAI request failed, attempting direct fetch:', backendError);
+        if (this.directApiKey) {
+          return await this.directFetch(request);
+        }
+        throw backendError;
+      }
+    }
+    if (this.directApiKey) {
+      return await this.directFetch(request);
+    }
+    if (this.runner) {
+      return await this.runner(request);
+    }
+    throw new Error('OpenAI is not configured.');
+  }
+
+  static async testConnection(apiKey?: string, model?: string): Promise<boolean> {
+    const keyToTest = apiKey?.trim() || this.directApiKey;
+    const modelToTest = sanitizeModel(model || this.modelName);
+    if (!keyToTest) return false;
 
     try {
-      const messages: (HumanMessage | SystemMessage)[] = [];
+      const response = await this.directFetch(
+        {
+          prompt: 'Respond with exactly: connected',
+          instructions: 'Follow the request exactly.',
+          imageDataUrl: '',
+          jsonMode: false,
+        },
+        keyToTest,
+        modelToTest,
+      );
+      return Boolean(response);
+    } catch (error) {
+      console.warn('OpenAI test connection failed:', error);
+      return false;
+    }
+  }
 
-      if (systemInstruction) {
-        messages.push(new SystemMessage(systemInstruction + '\nYou must respond ONLY with valid JSON, no markdown code fence and no extra commentary.'));
-      }
-
-      if (imageBase64) {
-        // LangChain OpenAI multimodal content format
-        messages.push(
-          new HumanMessage({
-            content: [
-              {
-                type: 'text',
-                text: prompt,
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: imageBase64,
-                },
-              },
-            ],
-          })
-        );
-      } else {
-        messages.push(new HumanMessage(prompt));
-      }
-
-      const response = await model.invoke(messages);
-      const text = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
-      
-      // Clean markdown codeblocks if model returns ```json ... ```
+  static async generateJson<T>(prompt: string, instructions?: string, imageDataUrl?: string): Promise<T | null> {
+    if (!this.hasApiKey()) return null;
+    try {
+      const text = await this.executeRequest({
+        prompt,
+        instructions: instructions || 'Return one valid JSON object and no additional text.',
+        imageDataUrl: imageDataUrl || '',
+        jsonMode: true,
+      });
       const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
       return JSON.parse(cleaned) as T;
-    } catch (err) {
-      console.warn('LangChain OpenAI call failed, falling back to local heuristic engine:', err);
+    } catch (error) {
+      console.warn('OpenAI JSON request failed:', error);
+      return null;
+    }
+  }
+
+  static async generateText(prompt: string, instructions?: string): Promise<string | null> {
+    if (!this.hasApiKey()) return null;
+    try {
+      const text = await this.executeRequest({
+        prompt,
+        instructions: instructions || 'Answer clearly and concisely.',
+        imageDataUrl: '',
+        jsonMode: false,
+      });
+      return text.trim() || null;
+    } catch (error) {
+      console.warn('OpenAI text request failed:', error);
       return null;
     }
   }

@@ -11,10 +11,9 @@ import {
 } from "spacetimedb";
 
 export default __t.row({
-  id: __t.u64().primaryKey(),
+  id: __t.string().primaryKey(),
+  owner: __t.identity(),
   title: __t.string(),
-  amountPaise: __t.i64().name("amount_paise"),
-  paidBy: __t.identity().name("paid_by"),
-  category: __t.string(),
-  breakdownJson: __t.string().name("breakdown_json"),
+  createdAt: __t.timestamp().name("created_at"),
+  updatedAt: __t.timestamp().name("updated_at"),
 });

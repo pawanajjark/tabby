@@ -10,11 +10,10 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export default __t.row({
-  id: __t.u64().primaryKey(),
-  title: __t.string(),
-  amountPaise: __t.i64().name("amount_paise"),
-  paidBy: __t.identity().name("paid_by"),
-  category: __t.string(),
-  breakdownJson: __t.string().name("breakdown_json"),
-});
+export const params = {
+  prompt: __t.string(),
+  instructions: __t.string(),
+  imageDataUrl: __t.string(),
+  jsonMode: __t.bool(),
+};
+export const returnType = __t.string()

@@ -8,11 +8,19 @@ import { type Infer as __Infer } from "spacetimedb";
 // Import all reducer arg schemas
 import AddChatMessageReducer from "../add_chat_message_reducer";
 import AddPantryItemReducer from "../add_pantry_item_reducer";
+import AppendConversationMessageReducer from "../append_conversation_message_reducer";
+import CreateConversationReducer from "../create_conversation_reducer";
 import RecordExpenseReducer from "../record_expense_reducer";
+import SetAiConfigReducer from "../set_ai_config_reducer";
 import SetDisplayNameReducer from "../set_display_name_reducer";
+import UpsertSharedMemoryReducer from "../upsert_shared_memory_reducer";
 
 export type AddChatMessageParams = __Infer<typeof AddChatMessageReducer>;
 export type AddPantryItemParams = __Infer<typeof AddPantryItemReducer>;
+export type AppendConversationMessageParams = __Infer<typeof AppendConversationMessageReducer>;
+export type CreateConversationParams = __Infer<typeof CreateConversationReducer>;
 export type RecordExpenseParams = __Infer<typeof RecordExpenseReducer>;
+export type SetAiConfigParams = __Infer<typeof SetAiConfigReducer>;
 export type SetDisplayNameParams = __Infer<typeof SetDisplayNameReducer>;
+export type UpsertSharedMemoryParams = __Infer<typeof UpsertSharedMemoryReducer>;
 

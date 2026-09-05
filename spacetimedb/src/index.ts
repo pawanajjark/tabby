@@ -1,57 +1,160 @@
-import { schema, table, t } from 'spacetimedb/server';
+import { TimeDuration } from 'spacetimedb';
+import { schema, table, t, SenderError } from 'spacetimedb/server';
+
+const member = table(
+  { name: 'member', public: true },
+  {
+    identity: t.identity().primaryKey(),
+    display_name: t.string(),
+  },
+);
+
+const pantryItem = table(
+  { name: 'pantry_item', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    name: t.string().index('btree'),
+    quantity: t.i32(),
+    unit: t.string(),
+    updated_by: t.identity(),
+  },
+);
+
+const expense = table(
+  { name: 'expense', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    title: t.string(),
+    amount_paise: t.i64(),
+    paid_by: t.identity(),
+    category: t.string(),
+    breakdown_json: t.string(),
+  },
+);
+
+const expenseSplit = table(
+  { name: 'expense_split', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    expense_id: t.u64().index('btree'),
+    member_identity: t.identity().index('btree'),
+    amount_paise: t.i64(),
+    settled: t.bool(),
+    reason: t.string(),
+  },
+);
+
+// Legacy public chat rows are retained for migration compatibility. New chat
+// traffic is stored in the private conversation tables below.
+const chatMessage = table(
+  { name: 'chat_message', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    body: t.string(),
+    sender: t.identity(),
+    kind: t.string(),
+  },
+);
+
+const conversation = table(
+  { name: 'conversation' },
+  {
+    id: t.string().primaryKey(),
+    owner: t.identity().index('btree'),
+    title: t.string(),
+    created_at: t.timestamp(),
+    updated_at: t.timestamp(),
+  },
+);
+
+const conversationMessage = table(
+  { name: 'conversation_message' },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    conversation_id: t.string().index('btree'),
+    owner: t.identity().index('btree'),
+    role: t.string(),
+    agent: t.string(),
+    content: t.string(),
+    created_at: t.timestamp(),
+  },
+);
+
+const aiConfig = table(
+  { name: 'ai_config' },
+  {
+    owner: t.identity().primaryKey(),
+    api_key: t.string(),
+    model: t.string(),
+    updated_at: t.timestamp(),
+  },
+);
+
+const aiVerification = table(
+  { name: 'ai_verification' },
+  {
+    owner: t.identity().primaryKey(),
+    verified_at: t.timestamp(),
+  },
+);
+
+const sharedMemory = table(
+  { name: 'shared_memory', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    subject_identity: t.identity().index('btree'),
+    subject_name: t.string(),
+    category: t.string().index('btree'),
+    memory_key: t.string(),
+    value: t.string(),
+    source_message_id: t.u64(),
+    updated_at: t.timestamp(),
+  },
+);
 
 const spacetimedb = schema({
-  member: table(
-    { name: 'member', public: true },
-    {
-      identity: t.identity().primaryKey(),
-      display_name: t.string(),
-    },
-  ),
-  pantry_item: table(
-    { name: 'pantry_item', public: true },
-    {
-      id: t.u64().primaryKey().autoInc(),
-      name: t.string().index('btree'),
-      quantity: t.i32(),
-      unit: t.string(),
-      updated_by: t.identity(),
-    },
-  ),
-  expense: table(
-    { name: 'expense', public: true },
-    {
-      id: t.u64().primaryKey().autoInc(),
-      title: t.string(),
-      amount_paise: t.i64(),
-      paid_by: t.identity(),
-      category: t.string(),
-      breakdown_json: t.string(),
-    },
-  ),
-  expense_split: table(
-    { name: 'expense_split', public: true },
-    {
-      id: t.u64().primaryKey().autoInc(),
-      expense_id: t.u64().index('btree'),
-      member_identity: t.identity().index('btree'),
-      amount_paise: t.i64(),
-      settled: t.bool(),
-      reason: t.string(),
-    },
-  ),
-  chat_message: table(
-    { name: 'chat_message', public: true },
-    {
-      id: t.u64().primaryKey().autoInc(),
-      body: t.string(),
-      sender: t.identity(),
-      kind: t.string(),
-    },
-  ),
+  member,
+  pantryItem,
+  expense,
+  expenseSplit,
+  chatMessage,
+  conversation,
+  conversationMessage,
+  aiConfig,
+  aiVerification,
+  sharedMemory,
 });
 
 export default spacetimedb;
+
+const aiStatusRow = t.row('AiStatus', {
+  configured: t.bool(),
+  verified: t.bool(),
+  model: t.string(),
+});
+
+export const my_conversations = spacetimedb.view(
+  { name: 'my_conversations', public: true },
+  t.array(conversation.rowType),
+  ctx => [...ctx.db.conversation.owner.filter(ctx.sender)],
+);
+
+export const my_conversation_messages = spacetimedb.view(
+  { name: 'my_conversation_messages', public: true },
+  t.array(conversationMessage.rowType),
+  ctx => [...ctx.db.conversationMessage.owner.filter(ctx.sender)],
+);
+
+export const my_ai_status = spacetimedb.view(
+  { name: 'my_ai_status', public: true },
+  t.option(aiStatusRow),
+  ctx => {
+    const config = ctx.db.aiConfig.owner.find(ctx.sender);
+    return config
+      ? { configured: true, verified: ctx.db.aiVerification.owner.find(ctx.sender) !== null, model: config.model }
+      : undefined;
+  },
+);
 
 function defaultMemberName(identityHex: string) {
   return `Household member ${identityHex.slice(0, 6)}`;
@@ -70,14 +173,131 @@ export const set_display_name = spacetimedb.reducer(
   { display_name: t.string() },
   (ctx, { display_name }) => {
     const name = display_name.trim();
-    if (!name) throw new Error('Please choose a display name.');
-    const member = ctx.db.member.identity.find(ctx.sender);
-    if (member) {
-      ctx.db.member.identity.update({ ...member, display_name: name });
+    if (!name) throw new SenderError('Please choose a display name.');
+    const current = ctx.db.member.identity.find(ctx.sender);
+    if (current) {
+      ctx.db.member.identity.update({ ...current, display_name: name });
     } else {
-      ctx.db.member.insert({
-        identity: ctx.sender,
-        display_name: name,
+      ctx.db.member.insert({ identity: ctx.sender, display_name: name });
+    }
+  },
+);
+
+export const create_conversation = spacetimedb.reducer(
+  { conversation_id: t.string(), title: t.string() },
+  (ctx, { conversation_id, title }) => {
+    const id = conversation_id.trim();
+    if (!id || id.length > 80) throw new SenderError('Invalid conversation ID.');
+    if (ctx.db.conversation.id.find(id)) throw new SenderError('Conversation already exists.');
+    ctx.db.conversation.insert({
+      id,
+      owner: ctx.sender,
+      title: title.trim().slice(0, 80) || 'Home conversation',
+      created_at: ctx.timestamp,
+      updated_at: ctx.timestamp,
+    });
+  },
+);
+
+export const append_conversation_message = spacetimedb.reducer(
+  {
+    conversation_id: t.string(),
+    role: t.string(),
+    agent: t.string(),
+    content: t.string(),
+  },
+  (ctx, args) => {
+    let conversationRow = ctx.db.conversation.id.find(args.conversation_id);
+    if (!conversationRow) {
+      conversationRow = ctx.db.conversation.insert({
+        id: args.conversation_id,
+        owner: ctx.sender,
+        title: 'Home conversation',
+        created_at: ctx.timestamp,
+        updated_at: ctx.timestamp,
+      });
+    } else if (conversationRow.owner.toHexString() !== ctx.sender.toHexString()) {
+      throw new SenderError('Conversation not found.');
+    }
+    const content = args.content.trim();
+    if (!content || content.length > 12_000) throw new SenderError('Message is empty or too long.');
+    if (!['user', 'assistant'].includes(args.role)) throw new SenderError('Invalid message role.');
+    if (!['tabby', 'general', 'grocery', 'chef', 'billing', 'context'].includes(args.agent)) {
+      throw new SenderError('Invalid message agent.');
+    }
+
+    ctx.db.conversationMessage.insert({
+      id: 0n,
+      conversation_id: args.conversation_id,
+      owner: ctx.sender,
+      role: args.role,
+      agent: args.agent,
+      content,
+      created_at: ctx.timestamp,
+    });
+    ctx.db.conversation.id.update({ ...conversationRow, updated_at: ctx.timestamp });
+  },
+);
+
+export const set_ai_config = spacetimedb.reducer(
+  { api_key: t.string(), model: t.string() },
+  (ctx, { api_key, model }) => {
+    const key = api_key.trim();
+    const selectedModel = model.trim() || 'gpt-4o-mini';
+    if (!key) {
+      const current = ctx.db.aiConfig.owner.find(ctx.sender);
+      if (current) ctx.db.aiConfig.owner.delete(ctx.sender);
+      const verification = ctx.db.aiVerification.owner.find(ctx.sender);
+      if (verification) ctx.db.aiVerification.owner.delete(ctx.sender);
+      return;
+    }
+    if (!key.startsWith('sk-') || key.length < 20) throw new SenderError('Enter a valid OpenAI API key.');
+    if (selectedModel.length > 80) throw new SenderError('Model name is too long.');
+    const current = ctx.db.aiConfig.owner.find(ctx.sender);
+    const verification = ctx.db.aiVerification.owner.find(ctx.sender);
+    if (verification) ctx.db.aiVerification.owner.delete(ctx.sender);
+    const row = { owner: ctx.sender, api_key: key, model: selectedModel, updated_at: ctx.timestamp };
+    if (current) ctx.db.aiConfig.owner.update(row);
+    else ctx.db.aiConfig.insert(row);
+  },
+);
+
+export const upsert_shared_memory = spacetimedb.reducer(
+  {
+    category: t.string(),
+    memory_key: t.string(),
+    value: t.string(),
+    source_message_id: t.u64(),
+  },
+  (ctx, args) => {
+    const safeCategories = ['diet', 'allergy', 'food_preference', 'routine'];
+    if (!safeCategories.includes(args.category)) throw new SenderError('That memory category cannot be shared.');
+    const key = args.memory_key.trim().slice(0, 80);
+    const value = args.value.trim().slice(0, 500);
+    if (!key || !value) throw new SenderError('Shared memory needs a key and value.');
+    const subject = ctx.db.member.identity.find(ctx.sender);
+    const subjectName = subject?.display_name || defaultMemberName(ctx.sender.toHexString());
+    const existing = [...ctx.db.sharedMemory.subject_identity.filter(ctx.sender)]
+      .find(row => row.category === args.category && row.memory_key === key);
+
+    if (existing) {
+      ctx.db.sharedMemory.id.update({
+        ...existing,
+        subject_name: subjectName,
+        value,
+        source_message_id: args.source_message_id,
+        updated_at: ctx.timestamp,
+      });
+    } else {
+      ctx.db.sharedMemory.insert({
+        id: 0n,
+        subject_identity: ctx.sender,
+        subject_name: subjectName,
+        category: args.category,
+        memory_key: key,
+        value,
+        source_message_id: args.source_message_id,
+        updated_at: ctx.timestamp,
       });
     }
   },
@@ -87,17 +307,17 @@ export const add_pantry_item = spacetimedb.reducer(
   { name: t.string(), quantity: t.i32(), unit: t.string() },
   (ctx, { name, quantity, unit }) => {
     const cleanName = name.trim().toLowerCase();
-    if (!cleanName || quantity === 0) throw new Error('Add an item and a non-zero quantity.');
-    const existing = [...ctx.db.pantry_item.name.filter(cleanName)][0];
+    if (!cleanName || quantity === 0) throw new SenderError('Add an item and a non-zero quantity.');
+    const existing = [...ctx.db.pantryItem.name.filter(cleanName)][0];
     if (existing) {
-      ctx.db.pantry_item.id.update({
+      ctx.db.pantryItem.id.update({
         ...existing,
         quantity: Math.max(0, existing.quantity + quantity),
         unit: unit.trim() || existing.unit,
         updated_by: ctx.sender,
       });
     } else {
-      ctx.db.pantry_item.insert({
+      ctx.db.pantryItem.insert({
         id: 0n,
         name: cleanName,
         quantity: Math.max(0, quantity),
@@ -112,10 +332,10 @@ export const record_expense = spacetimedb.reducer(
   { title: t.string(), amount_paise: t.i64() },
   (ctx, { title, amount_paise }) => {
     const cleanTitle = title.trim();
-    if (!cleanTitle || amount_paise <= 0n) throw new Error('Add an expense name and an amount.');
+    if (!cleanTitle || amount_paise <= 0n) throw new SenderError('Add an expense name and an amount.');
     const members = [...ctx.db.member.iter()];
-    if (members.length === 0) throw new Error('At least one roommate must join Tabby first.');
-    const expense = ctx.db.expense.insert({
+    if (members.length === 0) throw new SenderError('At least one roommate must join Tabby first.');
+    const insertedExpense = ctx.db.expense.insert({
       id: 0n,
       title: cleanTitle,
       amount_paise,
@@ -125,13 +345,13 @@ export const record_expense = spacetimedb.reducer(
     });
     const each = amount_paise / BigInt(members.length);
     const remainder = amount_paise % BigInt(members.length);
-    members.forEach((member, index) => {
-      ctx.db.expense_split.insert({
+    members.forEach((roommate, index) => {
+      ctx.db.expenseSplit.insert({
         id: 0n,
-        expense_id: expense.id,
-        member_identity: member.identity,
+        expense_id: insertedExpense.id,
+        member_identity: roommate.identity,
         amount_paise: each + (index === 0 ? remainder : 0n),
-        settled: member.identity === ctx.sender,
+        settled: roommate.identity.toHexString() === ctx.sender.toHexString(),
         reason: 'Equal split',
       });
     });
@@ -142,7 +362,88 @@ export const add_chat_message = spacetimedb.reducer(
   { body: t.string(), kind: t.string() },
   (ctx, { body, kind }) => {
     const cleanBody = body.trim();
-    if (!cleanBody) throw new Error('Message cannot be empty.');
-    ctx.db.chat_message.insert({ id: 0n, body: cleanBody, sender: ctx.sender, kind });
+    if (!cleanBody) throw new SenderError('Message cannot be empty.');
+    ctx.db.chatMessage.insert({ id: 0n, body: cleanBody, sender: ctx.sender, kind });
+  },
+);
+
+function responseText(payload: unknown): string {
+  if (!payload || typeof payload !== 'object') return '';
+  const data = payload as {
+    output_text?: string;
+    output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  if (data.choices?.[0]?.message?.content) return data.choices[0].message.content.trim();
+  if (typeof data.output_text === 'string') return data.output_text.trim();
+  return (data.output ?? [])
+    .flatMap(item => item.content ?? [])
+    .filter(part => part.type === 'output_text' && typeof part.text === 'string')
+    .map(part => part.text!.trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
+export const run_ai = spacetimedb.procedure(
+  {
+    prompt: t.string(),
+    instructions: t.string(),
+    image_data_url: t.string(),
+    json_mode: t.bool(),
+  },
+  t.string(),
+  (ctx, args) => {
+    const config = ctx.withTx(tx => tx.db.aiConfig.owner.find(tx.sender));
+    if (!config) throw new SenderError('OpenAI is not configured. Add your API key in AI settings.');
+    const prompt = args.prompt.trim();
+    if (!prompt) throw new SenderError('AI prompt cannot be empty.');
+
+    const messages: Array<{ role: string; content: unknown }> = [];
+    if (args.instructions?.trim()) {
+      messages.push({ role: 'system', content: args.instructions.trim() });
+    }
+
+    const imageDataUrl = args.image_data_url.trim();
+    if (imageDataUrl) {
+      messages.push({
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: imageDataUrl } },
+        ],
+      });
+    } else {
+      messages.push({ role: 'user', content: prompt });
+    }
+
+    const requestBody: Record<string, unknown> = {
+      model: config.model || 'gpt-4o-mini',
+      messages,
+      max_tokens: 1800,
+    };
+    if (args.json_mode) requestBody.response_format = { type: 'json_object' };
+
+    const response = ctx.http.fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.api_key}`,
+      },
+      body: JSON.stringify(requestBody),
+      timeout: TimeDuration.fromMillis(45_000),
+    });
+
+    if (response.status < 200 || response.status >= 300) {
+      throw new SenderError(`OpenAI request failed with status ${response.status}.`);
+    }
+    const text = responseText(response.json());
+    if (!text) throw new SenderError('OpenAI returned an empty response.');
+    ctx.withTx(tx => {
+      const current = tx.db.aiVerification.owner.find(tx.sender);
+      const verification = { owner: tx.sender, verified_at: tx.timestamp };
+      if (current) tx.db.aiVerification.owner.update(verification);
+      else tx.db.aiVerification.insert(verification);
+    });
+    return text;
   },
 );

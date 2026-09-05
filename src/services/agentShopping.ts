@@ -32,7 +32,8 @@ export class AgentShopping {
    */
   static async generateShoppingPlan(
     pantryItems: PantryItemData[],
-    roommates: RoommateProfile[]
+    roommates: RoommateProfile[],
+    request = '',
   ): Promise<ShoppingPlan> {
     const pantrySummary = pantryItems.map(i => `${i.name}: ${i.quantity} ${i.unit}`).join(', ') || 'Pantry is currently empty';
     const roommateSummaries = roommates.map(r => 
@@ -43,6 +44,11 @@ export class AgentShopping {
     if (AIProvider.hasApiKey()) {
       const prompt = `You are Tabby's Agent 1: Shopping Assistant.
 Given the current pantry inventory and the household roommates' cooking habits and dietary restrictions, generate an intelligent grocery restock shopping list.
+
+User request:
+${request || 'Recommend useful pantry restocks.'}
+
+Prioritize the user's requested dish or items when present. Do not recommend something already available in sufficient quantity.
 
 Current Pantry:
 ${pantrySummary}

@@ -36,17 +36,26 @@ import {
 // Import all reducer arg schemas
 import AddChatMessageReducer from "./add_chat_message_reducer";
 import AddPantryItemReducer from "./add_pantry_item_reducer";
+import AppendConversationMessageReducer from "./append_conversation_message_reducer";
+import CreateConversationReducer from "./create_conversation_reducer";
 import RecordExpenseReducer from "./record_expense_reducer";
+import SetAiConfigReducer from "./set_ai_config_reducer";
 import SetDisplayNameReducer from "./set_display_name_reducer";
+import UpsertSharedMemoryReducer from "./upsert_shared_memory_reducer";
 
 // Import all procedure arg schemas
+import * as RunAiProcedure from "./run_ai_procedure";
 
 // Import all table schema definitions
 import ChatMessageRow from "./chat_message_table";
 import ExpenseRow from "./expense_table";
 import ExpenseSplitRow from "./expense_split_table";
 import MemberRow from "./member_table";
+import MyAiStatusRow from "./my_ai_status_table";
+import MyConversationMessagesRow from "./my_conversation_messages_table";
+import MyConversationsRow from "./my_conversations_table";
 import PantryItemRow from "./pantry_item_table";
+import SharedMemoryRow from "./shared_memory_table";
 
 /** Type-only namespace exports for generated type groups. */
 
@@ -116,28 +125,71 @@ const tablesSchema = __schema({
       { name: 'pantry_item_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, PantryItemRow),
+  sharedMemory: __table({
+    name: 'shared_memory',
+    indexes: [
+      { accessor: 'category', name: 'shared_memory_category_idx_btree', algorithm: 'btree', columns: [
+        'category',
+      ] },
+      { accessor: 'id', name: 'shared_memory_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'subject_identity', name: 'shared_memory_subject_identity_idx_btree', algorithm: 'btree', columns: [
+        'subjectIdentity',
+      ] },
+    ],
+    constraints: [
+      { name: 'shared_memory_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, SharedMemoryRow),
+  myAiStatus: __table({
+    name: 'my_ai_status',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyAiStatusRow),
+  myConversationMessages: __table({
+    name: 'my_conversation_messages',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyConversationMessagesRow),
+  myConversations: __table({
+    name: 'my_conversations',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyConversationsRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
   __reducerSchema("add_chat_message", AddChatMessageReducer),
   __reducerSchema("add_pantry_item", AddPantryItemReducer),
+  __reducerSchema("append_conversation_message", AppendConversationMessageReducer),
+  __reducerSchema("create_conversation", CreateConversationReducer),
   __reducerSchema("record_expense", RecordExpenseReducer),
+  __reducerSchema("set_ai_config", SetAiConfigReducer),
   __reducerSchema("set_display_name", SetDisplayNameReducer),
+  __reducerSchema("upsert_shared_memory", UpsertSharedMemoryReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
 const proceduresSchema = __procedures(
+  __procedureSchema("run_ai", RunAiProcedure.params, RunAiProcedure.returnType),
 );
 
 type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "tables"> & {
   tables: typeof tablesSchema.schemaType.tables & {
-    /** @deprecated Use `chatMessage` instead. This alias will be removed in the next major version. */
-    readonly "chat_message": Omit<typeof tablesSchema.schemaType.tables["chatMessage"], "accessorName"> & { readonly accessorName: "chat_message" };
-    /** @deprecated Use `expenseSplit` instead. This alias will be removed in the next major version. */
-    readonly "expense_split": Omit<typeof tablesSchema.schemaType.tables["expenseSplit"], "accessorName"> & { readonly accessorName: "expense_split" };
-    /** @deprecated Use `pantryItem` instead. This alias will be removed in the next major version. */
-    readonly "pantry_item": Omit<typeof tablesSchema.schemaType.tables["pantryItem"], "accessorName"> & { readonly accessorName: "pantry_item" };
+    /** @deprecated Use `myAiStatus` instead. This alias will be removed in the next major version. */
+    readonly "my_ai_status": Omit<typeof tablesSchema.schemaType.tables["myAiStatus"], "accessorName"> & { readonly accessorName: "my_ai_status" };
+    /** @deprecated Use `myConversationMessages` instead. This alias will be removed in the next major version. */
+    readonly "my_conversation_messages": Omit<typeof tablesSchema.schemaType.tables["myConversationMessages"], "accessorName"> & { readonly accessorName: "my_conversation_messages" };
+    /** @deprecated Use `myConversations` instead. This alias will be removed in the next major version. */
+    readonly "my_conversations": Omit<typeof tablesSchema.schemaType.tables["myConversations"], "accessorName"> & { readonly accessorName: "my_conversations" };
   };
 };
 
@@ -156,9 +208,9 @@ const REMOTE_MODULE = {
 >;
 
 const tableAccessorAliases = {
-  "chat_message": "chatMessage",
-  "expense_split": "expenseSplit",
-  "pantry_item": "pantryItem",
+  "my_ai_status": "myAiStatus",
+  "my_conversation_messages": "myConversationMessages",
+  "my_conversations": "myConversations",
 } as const;
 
 function __withTableAccessorAliases<T extends object>(target: T, freeze = false): T {
@@ -179,22 +231,22 @@ function __withTableAccessorAliases<T extends object>(target: T, freeze = false)
 
 type __DbViewBase = __DbConnectionImpl<typeof REMOTE_MODULE>["db"];
 export type DbView = __DbViewBase & {
-  /** @deprecated Use `chatMessage` instead. This alias will be removed in the next major version. */
-  readonly "chat_message": __DbViewBase["chatMessage"];
-  /** @deprecated Use `expenseSplit` instead. This alias will be removed in the next major version. */
-  readonly "expense_split": __DbViewBase["expenseSplit"];
-  /** @deprecated Use `pantryItem` instead. This alias will be removed in the next major version. */
-  readonly "pantry_item": __DbViewBase["pantryItem"];
+  /** @deprecated Use `myAiStatus` instead. This alias will be removed in the next major version. */
+  readonly "my_ai_status": __DbViewBase["myAiStatus"];
+  /** @deprecated Use `myConversationMessages` instead. This alias will be removed in the next major version. */
+  readonly "my_conversation_messages": __DbViewBase["myConversationMessages"];
+  /** @deprecated Use `myConversations` instead. This alias will be removed in the next major version. */
+  readonly "my_conversations": __DbViewBase["myConversations"];
 };
 
 type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;
 export type Tables = __TablesBase & {
-  /** @deprecated Use `chatMessage` instead. This alias will be removed in the next major version. */
-  readonly "chat_message": __TablesBase["chatMessage"];
-  /** @deprecated Use `expenseSplit` instead. This alias will be removed in the next major version. */
-  readonly "expense_split": __TablesBase["expenseSplit"];
-  /** @deprecated Use `pantryItem` instead. This alias will be removed in the next major version. */
-  readonly "pantry_item": __TablesBase["pantryItem"];
+  /** @deprecated Use `myAiStatus` instead. This alias will be removed in the next major version. */
+  readonly "my_ai_status": __TablesBase["myAiStatus"];
+  /** @deprecated Use `myConversationMessages` instead. This alias will be removed in the next major version. */
+  readonly "my_conversation_messages": __TablesBase["myConversationMessages"];
+  /** @deprecated Use `myConversations` instead. This alias will be removed in the next major version. */
+  readonly "my_conversations": __TablesBase["myConversations"];
 };
 
 /** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */

@@ -10,6 +10,27 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const AiConfig = __t.object("AiConfig", {
+  owner: __t.identity(),
+  apiKey: __t.string(),
+  model: __t.string(),
+  updatedAt: __t.timestamp(),
+});
+export type AiConfig = __Infer<typeof AiConfig>;
+
+export const AiStatus = __t.object("AiStatus", {
+  configured: __t.bool(),
+  verified: __t.bool(),
+  model: __t.string(),
+});
+export type AiStatus = __Infer<typeof AiStatus>;
+
+export const AiVerification = __t.object("AiVerification", {
+  owner: __t.identity(),
+  verifiedAt: __t.timestamp(),
+});
+export type AiVerification = __Infer<typeof AiVerification>;
+
 export const ChatMessage = __t.object("ChatMessage", {
   id: __t.u64(),
   body: __t.string(),
@@ -18,11 +39,33 @@ export const ChatMessage = __t.object("ChatMessage", {
 });
 export type ChatMessage = __Infer<typeof ChatMessage>;
 
+export const Conversation = __t.object("Conversation", {
+  id: __t.string(),
+  owner: __t.identity(),
+  title: __t.string(),
+  createdAt: __t.timestamp(),
+  updatedAt: __t.timestamp(),
+});
+export type Conversation = __Infer<typeof Conversation>;
+
+export const ConversationMessage = __t.object("ConversationMessage", {
+  id: __t.u64(),
+  conversationId: __t.string(),
+  owner: __t.identity(),
+  role: __t.string(),
+  agent: __t.string(),
+  content: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type ConversationMessage = __Infer<typeof ConversationMessage>;
+
 export const Expense = __t.object("Expense", {
   id: __t.u64(),
   title: __t.string(),
   amountPaise: __t.i64(),
   paidBy: __t.identity(),
+  category: __t.string(),
+  breakdownJson: __t.string(),
 });
 export type Expense = __Infer<typeof Expense>;
 
@@ -32,6 +75,7 @@ export const ExpenseSplit = __t.object("ExpenseSplit", {
   memberIdentity: __t.identity(),
   amountPaise: __t.i64(),
   settled: __t.bool(),
+  reason: __t.string(),
 });
 export type ExpenseSplit = __Infer<typeof ExpenseSplit>;
 
@@ -41,6 +85,15 @@ export const Member = __t.object("Member", {
 });
 export type Member = __Infer<typeof Member>;
 
+export const MyAiStatus = __t.object("MyAiStatus", {});
+export type MyAiStatus = __Infer<typeof MyAiStatus>;
+
+export const MyConversationMessages = __t.object("MyConversationMessages", {});
+export type MyConversationMessages = __Infer<typeof MyConversationMessages>;
+
+export const MyConversations = __t.object("MyConversations", {});
+export type MyConversations = __Infer<typeof MyConversations>;
+
 export const PantryItem = __t.object("PantryItem", {
   id: __t.u64(),
   name: __t.string(),
@@ -49,4 +102,16 @@ export const PantryItem = __t.object("PantryItem", {
   updatedBy: __t.identity(),
 });
 export type PantryItem = __Infer<typeof PantryItem>;
+
+export const SharedMemory = __t.object("SharedMemory", {
+  id: __t.u64(),
+  subjectIdentity: __t.identity(),
+  subjectName: __t.string(),
+  category: __t.string(),
+  memoryKey: __t.string(),
+  value: __t.string(),
+  sourceMessageId: __t.u64(),
+  updatedAt: __t.timestamp(),
+});
+export type SharedMemory = __Infer<typeof SharedMemory>;
 

@@ -16,4 +16,5 @@ export default __t.row({
   memberIdentity: __t.identity().name("member_identity"),
   amountPaise: __t.i64().name("amount_paise"),
   settled: __t.bool(),
+  reason: __t.string(),
 });

@@ -9,6 +9,7 @@ export interface RecipeIngredient {
   unit: string;
   inPantry: boolean;
   pantryQuantity?: number;
+  substitution?: string;
 }
 
 export interface Recipe {
@@ -39,7 +40,8 @@ export class AgentCooking {
    */
   static async generateRecipes(
     pantryItems: PantryItemData[],
-    roommates: RoommateProfile[]
+    roommates: RoommateProfile[],
+    request = '',
   ): Promise<CookingPlan> {
     const pantrySummary = pantryItems.map(i => `${i.name} (${i.quantity} ${i.unit})`).join(', ') || 'Empty pantry';
     const roommateProfilesText = roommates.map(r => 
@@ -47,9 +49,13 @@ export class AgentCooking {
     ).join('\n');
 
     if (AIProvider.hasApiKey()) {
-      const prompt = `You are Tabby's Agent 2: Cooking Assistant.
-Analyze the current pantry inventory, the roommates' dietary preferences, and their frequent home-cooked dishes.
-Generate 3 to 4 realistic, appetizing recipes that maximize the use of available pantry items and strictly adhere to the roommates' dietary constraints.
+      const prompt = `You are Tabby's Chef agent.
+Create the recipe the user requested. If no dish is named, suggest 3 practical recipes. Respect every dietary constraint.
+Prefer available pantry ingredients and make safe, realistic substitutions when they help. Creative household jugaad is welcome, such as using bread as a pizza base, but never suggest an unsafe or implausible swap.
+If the requested dish still needs ingredients, keep the requested dish and clearly identify what must be bought. Never claim an ingredient is in the pantry unless it appears below.
+
+User request:
+${request || 'Suggest something good to cook from the pantry.'}
 
 Current Pantry Stock:
 ${pantrySummary}
@@ -76,7 +82,8 @@ Provide output as a valid JSON object matching this schema:
           "name": "ingredient name",
           "quantity": 1,
           "unit": "cup/items/g",
-          "inPantry": true
+          "inPantry": true,
+          "substitution": "Optional: explain which conventional ingredient this pantry item replaces"
         }
       ],
       "missingCount": 0,
@@ -88,7 +95,7 @@ Provide output as a valid JSON object matching this schema:
 
       const aiResult = await AIProvider.generateJson<CookingPlan>(
         prompt,
-        'You are an expert chef who excels at zero-waste cooking, matching recipes to available pantry ingredients and dietary requirements.'
+        'You are an inventive, practical household chef. Return JSON only. Ingredient names must describe the ingredient actually used, and substitutions must preserve food safety and dietary requirements.'
       );
 
       if (aiResult && Array.isArray(aiResult.recipes) && aiResult.recipes.length > 0) {
@@ -106,11 +113,19 @@ Provide output as a valid JSON object matching this schema:
                 return { ...ingredient, inPantry };
               });
 
+            const instructions = Array.isArray(recipe.instructions)
+              ? recipe.instructions.filter(step => typeof step === 'string' && step.trim())
+              : [];
             return {
               ...recipe,
               id: recipe.id || `recipe_${index + 1}`,
               ingredients,
               missingCount: ingredients.filter(ingredient => !ingredient.inPantry).length,
+              prepTimeMinutes: Number.isFinite(recipe.prepTimeMinutes) ? Math.max(0, recipe.prepTimeMinutes) : 10,
+              cookTimeMinutes: Number.isFinite(recipe.cookTimeMinutes) ? Math.max(1, recipe.cookTimeMinutes) : 20,
+              servings: Number.isFinite(recipe.servings) ? Math.max(1, recipe.servings) : Math.max(1, roommates.length),
+              instructions,
+              tips: typeof recipe.tips === 'string' ? recipe.tips : '',
               compatibleRoommates: Array.isArray(recipe.compatibleRoommates)
                 ? recipe.compatibleRoommates
                 : roommates.map(roommate => roommate.displayName),

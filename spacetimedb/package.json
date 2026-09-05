@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "spacetimedb": "2.10.*"
+    "spacetimedb": "2.10.*",
+    "tabby": "file:.."
   },
   "devDependencies": {
     "typescript": "^5.7.2"

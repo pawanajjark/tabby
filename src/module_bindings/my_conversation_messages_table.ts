@@ -12,9 +12,10 @@ import {
 
 export default __t.row({
   id: __t.u64().primaryKey(),
-  title: __t.string(),
-  amountPaise: __t.i64().name("amount_paise"),
-  paidBy: __t.identity().name("paid_by"),
-  category: __t.string(),
-  breakdownJson: __t.string().name("breakdown_json"),
+  conversationId: __t.string().name("conversation_id"),
+  owner: __t.identity(),
+  role: __t.string(),
+  agent: __t.string(),
+  content: __t.string(),
+  createdAt: __t.timestamp().name("created_at"),
 });
