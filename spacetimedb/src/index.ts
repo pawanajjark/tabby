@@ -106,6 +106,15 @@ const conversationMessage = table(
   },
 );
 
+const conversationMessageReceipt = table(
+  { name: 'conversation_message_receipt' },
+  {
+    idempotency_key: t.string().primaryKey(),
+    owner: t.identity().index('btree'),
+    message_id: t.u64(),
+  },
+);
+
 const sharedMemory = table(
   { name: 'shared_memory', public: true },
   {
@@ -149,6 +158,7 @@ const spacetimedb = schema({
   flatRule,
   conversation,
   conversationMessage,
+  conversationMessageReceipt,
   sharedMemory,
   aiConfig,
   aiVerification,
@@ -187,6 +197,12 @@ export const my_ai_status = spacetimedb.view(
 
 function defaultMemberName(identityHex: string) {
   return `Housemate ${identityHex.slice(0, 6)}`;
+}
+
+function senderFlatId(ctx: any): bigint {
+  const memberRow = ctx.db.member.identity.find(ctx.sender);
+  if (!memberRow) throw new SenderError('Choose a home before using shared household data.');
+  return memberRow.flat_id;
 }
 
 function ensureDefaultResidenceAndFlat(ctx: any): { residenceId: bigint; flatId: bigint } {
@@ -432,7 +448,7 @@ export const create_conversation = spacetimedb.reducer(
     const id = conversation_id.trim();
     if (!id || id.length > 80) throw new SenderError('Invalid conversation ID.');
     if (ctx.db.conversation.id.find(id)) throw new SenderError('Conversation already exists.');
-    const { flatId } = ensureDefaultResidenceAndFlat(ctx);
+    const flatId = senderFlatId(ctx);
     ctx.db.conversation.insert({
       id,
       flat_id: flatId,
@@ -444,45 +460,71 @@ export const create_conversation = spacetimedb.reducer(
   },
 );
 
-export const append_conversation_message = spacetimedb.reducer(
-  {
-    conversation_id: t.string(),
-    role: t.string(),
-    agent: t.string(),
-    content: t.string(),
-  },
-  (ctx, args) => {
-    const { flatId } = ensureDefaultResidenceAndFlat(ctx);
-    let conversationRow = ctx.db.conversation.id.find(args.conversation_id);
-    if (!conversationRow) {
-      conversationRow = ctx.db.conversation.insert({
-        id: args.conversation_id,
-        flat_id: flatId,
-        owner: ctx.sender,
-        title: 'Home conversation',
-        created_at: ctx.timestamp,
-        updated_at: ctx.timestamp,
-      });
-    } else if (conversationRow.owner.toHexString() !== ctx.sender.toHexString()) {
-      throw new SenderError('Conversation not found.');
-    }
-    const content = args.content.trim();
-    if (!content || content.length > 12_000) throw new SenderError('Message is empty or too long.');
-    if (!['user', 'assistant'].includes(args.role)) throw new SenderError('Invalid message role.');
-    if (!['tabby', 'general', 'grocery', 'chef', 'billing', 'context'].includes(args.agent)) {
-      throw new SenderError('Invalid message agent.');
-    }
-
-    ctx.db.conversationMessage.insert({
-      id: 0n,
-      conversation_id: args.conversation_id,
+function appendConversationMessage(
+  ctx: any,
+  args: { conversation_id: string; role: string; agent: string; content: string },
+  messageKey?: string,
+) {
+  const idempotencyKey = messageKey ? `${ctx.sender.toHexString()}:${messageKey}` : undefined;
+  if (idempotencyKey && ctx.db.conversationMessageReceipt.idempotency_key.find(idempotencyKey)) return;
+  const flatId = senderFlatId(ctx);
+  let conversationRow = ctx.db.conversation.id.find(args.conversation_id);
+  if (!conversationRow) {
+    conversationRow = ctx.db.conversation.insert({
+      id: args.conversation_id,
+      flat_id: flatId,
       owner: ctx.sender,
-      role: args.role,
-      agent: args.agent,
-      content,
+      title: 'Home conversation',
       created_at: ctx.timestamp,
+      updated_at: ctx.timestamp,
     });
-    ctx.db.conversation.id.update({ ...conversationRow, updated_at: ctx.timestamp });
+  } else if (conversationRow.owner.toHexString() !== ctx.sender.toHexString()) {
+    throw new SenderError('Conversation not found.');
+  }
+  const content = args.content.trim();
+  if (!content || content.length > 12_000) throw new SenderError('Message is empty or too long.');
+  if (!['user', 'assistant'].includes(args.role)) throw new SenderError('Invalid message role.');
+  if (!['tabby', 'general', 'grocery', 'chef', 'billing', 'context'].includes(args.agent)) {
+    throw new SenderError('Invalid message agent.');
+  }
+
+  const inserted = ctx.db.conversationMessage.insert({
+    id: 0n,
+    conversation_id: args.conversation_id,
+    owner: ctx.sender,
+    role: args.role,
+    agent: args.agent,
+    content,
+    created_at: ctx.timestamp,
+  });
+  if (idempotencyKey) {
+    ctx.db.conversationMessageReceipt.insert({
+      idempotency_key: idempotencyKey,
+      owner: ctx.sender,
+      message_id: inserted.id,
+    });
+  }
+  ctx.db.conversation.id.update({ ...conversationRow, updated_at: ctx.timestamp });
+}
+
+const conversationMessageArgs = {
+  conversation_id: t.string(),
+  role: t.string(),
+  agent: t.string(),
+  content: t.string(),
+};
+
+export const append_conversation_message = spacetimedb.reducer(
+  conversationMessageArgs,
+  (ctx, args) => appendConversationMessage(ctx, args),
+);
+
+export const append_conversation_message_once = spacetimedb.reducer(
+  { ...conversationMessageArgs, message_key: t.string() },
+  (ctx, args) => {
+    const messageKey = args.message_key.trim();
+    if (!messageKey || messageKey.length > 120) throw new SenderError('Invalid message key.');
+    appendConversationMessage(ctx, args, messageKey);
   },
 );
 
@@ -621,6 +663,7 @@ export const clear_all_data = spacetimedb.reducer(
     for (const row of [...ctx.db.expense.iter()]) ctx.db.expense.id.delete(row.id);
     for (const row of [...ctx.db.sharedMemory.iter()]) ctx.db.sharedMemory.id.delete(row.id);
     for (const row of [...ctx.db.flatRule.iter()]) ctx.db.flatRule.id.delete(row.id);
+    for (const row of [...ctx.db.conversationMessageReceipt.iter()]) ctx.db.conversationMessageReceipt.idempotency_key.delete(row.idempotency_key);
     for (const row of [...ctx.db.conversationMessage.iter()]) ctx.db.conversationMessage.id.delete(row.id);
     for (const row of [...ctx.db.conversation.iter()]) ctx.db.conversation.id.delete(row.id);
     for (const row of [...ctx.db.flat.iter()]) ctx.db.flat.id.delete(row.id);

@@ -54,9 +54,7 @@ export function renderIdentityScreen(state: IdentityFeatureState): IdentityScree
         { id: 'preferences', heading: 'Household preferences', body: 'Dietary choices and cooking habits help with shared planning.' },
       ], actions: [{ id: 'save-profile', label: 'Continue', tone: 'primary' }] };
     case 'home-access':
-      return { ...base, body: 'Choose an existing home or create a new one.', sections: [
-        { id: 'homes', rows: state.homes.map(home => ({ title: home.name, detail: `${home.label}, ${home.residenceName}`, status: home.active ? 'Current home' : undefined })) },
-      ], actions: [
+      return { ...base, body: 'Choose an existing home or create a new one.', actions: [
         { id: 'create-home', label: 'Create a home', tone: 'primary' },
       ] };
     case 'create-home': {
@@ -97,8 +95,6 @@ export function renderIdentityScreen(state: IdentityFeatureState): IdentityScree
     }
     case 'accounts':
       return { ...base, body: 'Switching waits for the selected connection before the account becomes active.', sections: [
-        { id: 'accounts', heading: 'Saved accounts', rows: state.accounts.map(account => ({ title: account.displayName || 'Connected account', detail: account.detail, status: account.active ? 'Current account' : undefined })) },
-        { id: 'homes', heading: 'Homes for this account', rows: state.homes.map(home => ({ title: home.name, detail: `${home.label}, ${home.residenceName}`, status: home.active ? 'Current home' : undefined })) },
         { id: 'recovery', heading: 'Cannot access an account?', body: 'Start account recovery with your configured identity provider, then reconnect Tabby.' },
       ], actions: [
         { id: 'sign-out', label: 'Sign out', tone: 'secondary' },

@@ -40,7 +40,9 @@ export function conversationListItems(state: ConversationFeatureState): Conversa
         title,
         preview: latest?.text.trim() ?? '',
         updatedAt: latest?.createdAt ?? null,
-        unreadCount: conversation.messages.filter(message => message.role === 'assistant' && !message.readAt).length,
+        unreadCount: conversation.id === state.activeConversationId
+          ? 0
+          : conversation.messages.filter(message => message.role === 'assistant' && !message.readAt).length,
         active: conversation.id === state.activeConversationId,
       };
     })

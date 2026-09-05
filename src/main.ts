@@ -5,12 +5,15 @@ import { installRouteNavigation, reflectRoute, routeNavigation } from './app/rou
 import { createHouseholdGateway, householdSubscriptionTables } from './data/householdGateway';
 import { identityBackRoute, renderIdentityFlow } from './app/identityFlowView';
 import { installDrawerController } from './shared/drawer';
-import { ActionCoordinator } from './services/actionCoordinator';
+import { ActionCoordinator, settleWithin } from './services/actionCoordinator';
 import { PersistentOutbox, type OutboxCommand } from './services/outbox';
 import {
   ConversationDeliveryStore,
+  canPersistConversationMessage,
   createConversationState,
+  decodeStoredConversationMessage,
   emptyHomeStarterSuggestions,
+  encodeStoredConversationMessage,
   pendingRoutePresentation,
   reduceConversationState,
   renderConversationRoute,
@@ -71,10 +74,13 @@ import {
   signOut,
   switchAccount,
   switchHome,
+  homePreview,
+  updateIdentityTextField,
   type IdentityFeatureState,
   type IdentityPorts,
   type IdentityRoute,
 } from './features/identity';
+import { sharedActionAvailability } from './features/household/availability.ts';
 import { AgentShopping } from './services/agentShopping';
 import { AgentCooking, type Recipe } from './services/agentCooking';
 import { AgentBilling, type SplitResult } from './services/agentBilling';
@@ -433,6 +439,7 @@ let requestedHomePath: 'create' | 'join' | null = null;
 let identityReturnFocus: HTMLElement | null = null;
 let identityCompletionVisible = false;
 let editingExistingHomeBasics = false;
+let identityEntryRoute: IdentityRoute | undefined;
 let lastAiConnectionError: { model: string; message: string } | null = null;
 let manualInvitation: { link: string; identity: string; homeId: string } | null = null;
 const outboxes = new Map<string, PersistentOutbox>();
@@ -595,27 +602,14 @@ function setRoute(intent: AgentIntent | 'idle', busy = false) {
   label.textContent = busy ? `${labels[intent]} working` : labels[intent];
 }
 
-function encodeStoredMessage(message: Omit<ConversationMessage, 'id'>) {
-  return JSON.stringify({ text: message.text, contentHtml: message.contentHtml });
-}
-
-function decodeStoredMessage(content: string): Pick<ConversationMessage, 'text' | 'contentHtml'> {
-  try {
-    const parsed = JSON.parse(content) as { text?: string; contentHtml?: string };
-    if (parsed.text || parsed.contentHtml) return parsed;
-  } catch {
-    // Rows created before structured message storage are plain text.
-  }
-  return { text: content };
-}
-
-async function persistConversationMessage(message: Omit<ConversationMessage, 'id'>) {
-  if (!activeConversationId || syncingConversation || !currentIdentityHasMembership()) return;
+async function persistConversationMessage(message: ConversationMessage) {
+  if (!activeConversationId || syncingConversation || !currentIdentityHasMembership() || !canPersistConversationMessage(message)) return;
   await householdGateway.appendConversationMessage({
       conversationId: activeConversationId,
+      messageKey: message.id,
       role: message.role,
       agent: message.agent,
-      content: encodeStoredMessage(message),
+      content: encodeStoredConversationMessage(message),
   });
 }
 
@@ -643,6 +637,7 @@ async function processOutboxCommand(command: Readonly<OutboxCommand>) {
   const payload = command.payload as MessageOutboxPayload;
   await householdGateway.appendConversationMessage({
     conversationId: payload.conversationId,
+    messageKey: payload.messageId,
     role: payload.role,
     agent: payload.agent,
     content: payload.content,
@@ -660,21 +655,34 @@ async function flushActiveOutbox() {
     if (!message) continue;
     updateMessage(message.id, { delivery: delivery.status });
     const command = commands.find(candidate => candidate.id === delivery.commandId);
-    const routedKey = `tabby_outbox_routed:${delivery.commandId}`;
-    if (delivery.status === 'sent' && command && !localStorage.getItem(routedKey)) {
-      localStorage.setItem(routedKey, '1');
+    if (delivery.status === 'sent' && command) {
       const payload = command.payload as MessageOutboxPayload;
-      await routeMessage(payload.text);
+      await routeAcknowledgedCommandOnce(command, payload);
     }
   }
 }
 
-function addMessage(message: Omit<ConversationMessage, 'id'>, persist = true) {
-  const newMsg = { ...message, id: crypto.randomUUID() };
+async function routeAcknowledgedCommandOnce(command: Readonly<OutboxCommand>, payload: MessageOutboxPayload) {
+  const routedKey = `tabby_outbox_routed:${command.id}`;
+  const routeOnce = async () => {
+    if (localStorage.getItem(routedKey)) return;
+    localStorage.setItem(routedKey, 'routing');
+    await routeMessage(payload.text, `reply:${command.id}`);
+    localStorage.setItem(routedKey, '1');
+  };
+  if (navigator.locks) {
+    await navigator.locks.request(`tabby:${routedKey}`, routeOnce);
+  } else {
+    await routeOnce();
+  }
+}
+
+function addMessage(message: Omit<ConversationMessage, 'id'>, persist = true, id: string = crypto.randomUUID()) {
+  const newMsg = { ...message, id };
   conversation.push(newMsg);
   saveLocalConversation(activeConversationId, conversation);
   renderConversation();
-  if (persist) void persistConversationMessage(message).catch(err => {
+  if (persist) void persistConversationMessage(newMsg).catch(err => {
     console.warn('Failed persisting message to SpacetimeDB:', err);
   });
   return newMsg;
@@ -697,7 +705,7 @@ function completeProgressMessage(id: string, message: Omit<ConversationMessage, 
   Object.assign(pending, message, { pending: false, progressLabel: undefined });
   saveLocalConversation(activeConversationId, conversation);
   renderConversation();
-  void persistConversationMessage(message).catch(err => console.warn('Failed persisting response:', err));
+  void persistConversationMessage(pending).catch(err => console.warn('Failed persisting response:', err));
 }
 
 function syncConversationFromDatabase() {
@@ -713,7 +721,7 @@ function syncConversationFromDatabase() {
       agent: ['tabby', 'general', 'grocery', 'chef', 'billing', 'context'].includes(row.agent)
         ? row.agent as MessageAgent
         : 'tabby',
-      ...decodeStoredMessage(row.content),
+      ...decodeStoredConversationMessage(row.content),
     }));
     saveLocalConversation(activeConversationId, conversation);
   } else {
@@ -842,7 +850,7 @@ function conversationRecords(): ConversationRecord[] {
       messages: messages.filter(message => message.conversationId === row.id)
         .sort((left, right) => Number(left.id - right.id))
         .map(message => {
-          const decoded = decodeStoredMessage(message.content);
+          const decoded = decodeStoredConversationMessage(message.content);
           return {
             id: message.id.toString(),
             role: message.role === 'user' ? 'user' as const : 'assistant' as const,
@@ -1207,7 +1215,8 @@ function renderContextPanel() {
   const memory = getSharedContext();
   const pantry = pantryData().filter(item => item.quantity > 0 && !pendingDeletionFor('pantry', item.id)).sort((a, b) => a.name.localeCompare(b.name));
   const rules = flatRulesData().filter(rule => !pendingDeletionFor('rule', rule.id));
-  const deletionAvailable = isConnected && navigator.onLine !== false;
+  const shared = currentSharedAvailability();
+  const deletionAvailable = shared.available;
 
   document.querySelector('#people-count')!.textContent = peoplePresentation.countLabel;
   document.querySelector('#memory-count')!.textContent = String(memory.length);
@@ -1290,12 +1299,12 @@ function renderContextPanel() {
     notes: memory.map(item => ({ title: item.value })),
     agreements: rules.map(item => ({ title: item.title })),
     reminders,
-    online: isConnected && navigator.onLine !== false,
+    online: shared.available,
     mobile: contextIsDrawer(),
   });
   const reminderMount = document.querySelector<HTMLElement>('#reminder-shelf-mount');
   if (reminderMount) {
-    reminderMount.innerHTML = renderReminderShelf(reminders, isConnected && navigator.onLine !== false);
+    reminderMount.innerHTML = renderReminderShelf(reminders, shared.available);
     reminderMount.querySelectorAll<HTMLButtonElement>('[data-complete-reminder]').forEach(button => {
       button.addEventListener('click', async () => {
         const id = button.closest<HTMLElement>('[data-reminder-id]')?.dataset.reminderId;
@@ -1321,9 +1330,10 @@ function renderPantryRoute() {
   }
   const items = pantryViewItems(householdGateway.pantryItems(), householdGateway.pantryItemDetails())
     .filter(item => !pendingDeletionFor('pantry', item.id.toString()));
+  const shared = currentSharedAvailability();
   target.innerHTML = renderRichPantryRoute(items, {
     nowMicros: BigInt(Date.now()) * 1_000n,
-    online: isConnected && navigator.onLine !== false,
+    online: shared.available,
     mobile: window.matchMedia('(max-width: 720px)').matches,
     filters: pantryFilters,
   });
@@ -1490,7 +1500,7 @@ function renderSplit(split: SplitResult) {
     }),
   };
   currentBillPhase = { step: 'editing', acknowledgement: { status: 'idle' } };
-  return renderBillReview(currentBillDraft, isConnected, currentBillPhase, window.matchMedia('(max-width: 720px)').matches);
+  return renderBillReview(currentBillDraft, currentSharedAvailability().available, currentBillPhase, window.matchMedia('(max-width: 720px)').matches);
 }
 
 async function executeIntent(
@@ -1553,13 +1563,21 @@ async function executeIntent(
   return { message: { role: 'assistant', agent: 'general', text: response }, summary: response.slice(0, 120) };
 }
 
-async function routeMessage(text: string) {
+async function routeMessage(text: string, responseMessageId?: string) {
   const personalAnswer = TabbyBrain.answerPersonalQuestion(text, currentName());
-  if (personalAnswer) return void addMessage({ role: 'assistant', agent: 'general', text: personalAnswer });
+  if (personalAnswer) return void addMessage({ role: 'assistant', agent: 'general', text: personalAnswer }, true, responseMessageId);
   setRoute('general', true);
-  const progress = addMessage({ role: 'assistant', agent: 'general', pending: true, progressLabel: 'Tabby is understanding your request' }, false);
+  const progress = addMessage(
+    { role: 'assistant', agent: 'general', pending: true, progressLabel: 'Tabby is understanding your request' },
+    false,
+    responseMessageId,
+  );
   try {
-    const analysis = await TabbyBrain.analyze(text, conversation, getSharedContext());
+    const analysis = await settleWithin(
+      TabbyBrain.analyze(text, conversation, getSharedContext()),
+      30_000,
+      'Tabby took too long to understand that request. Please try again.',
+    );
     TabbyBrain.savePrivateFacts(currentIdentity || 'local', analysis.privateFacts);
     const routes = pendingRoutePresentation(analysis.intents);
     updateMessage(progress.id, { routes, progressLabel: 'Household routes are working in order' });
@@ -1567,7 +1585,11 @@ async function routeMessage(text: string) {
     for (const [index, intent] of analysis.intents.entries()) {
       setRoute(intent, true);
       try {
-        const result = await executeIntent(intent, text, analysis);
+        const result = await settleWithin(
+          executeIntent(intent, text, analysis),
+          45_000,
+          'This household action took too long. Please try again.',
+        );
         content.push(`<section class="inline-route-result route-${intent}">${result.message.contentHtml || `<p>${escapeHtml(result.message.text || '')}</p>`}</section>`);
         routes[index] = { intent, status: 'acknowledged', summary: result.summary };
       } catch (cause) {
@@ -1579,6 +1601,13 @@ async function routeMessage(text: string) {
     }
     completeProgressMessage(progress.id, {
       role: 'assistant', agent: analysis.intents.at(-1) || 'general', contentHtml: content.join(''), routes,
+    });
+  } catch (cause) {
+    const error = cause instanceof Error ? cause.message : String(cause);
+    completeProgressMessage(progress.id, {
+      role: 'assistant',
+      agent: 'general',
+      text: error || 'Tabby could not complete that request. Please try again.',
     });
   } finally {
     setRoute('idle', false);
@@ -1602,7 +1631,7 @@ async function waitForSubscribed<T>(read: () => T | undefined, message: string, 
 
 async function recordCurrentBill() {
   if (!currentBillDraft) return;
-  currentBillPhase = startBillRecord(currentBillDraft, isConnected && navigator.onLine !== false);
+  currentBillPhase = startBillRecord(currentBillDraft, currentSharedAvailability().available);
   renderConversation();
   if (currentBillPhase.step !== 'creating-review') return;
   try {
@@ -1618,9 +1647,11 @@ async function recordCurrentBill() {
 }
 
 function bindMessageActions() {
+  const shared = currentSharedAvailability();
   document.querySelectorAll<HTMLButtonElement>('[data-add-pantry]').forEach(button => {
-    button.disabled = !isConnected;
-    button.setAttribute('aria-disabled', String(!isConnected));
+    button.disabled = !shared.available;
+    button.setAttribute('aria-disabled', String(!shared.available));
+    if (!shared.available) button.title = shared.reason || 'Shared action unavailable';
     button.onclick = async () => {
       const name = button.dataset.addPantry || '';
       const qty = Math.max(1, Math.round(Number(button.dataset.quantity)));
@@ -1633,15 +1664,15 @@ function bindMessageActions() {
         showToast(`Added ${qty} ${unit} of ${name} to the pantry.`);
       } else {
         button.textContent = 'Add';
-        button.disabled = !isConnected;
+        button.disabled = !shared.available;
         showToast(result.status === 'rejected' ? result.error.message : 'Waiting for a connection.', 'error');
       }
     };
   });
 
   document.querySelectorAll<HTMLButtonElement>('[data-cook-recipe]').forEach(button => {
-    button.disabled = !isConnected;
-    button.setAttribute('aria-disabled', String(!isConnected));
+    button.disabled = !shared.available;
+    button.setAttribute('aria-disabled', String(!shared.available));
     button.onclick = async () => {
       const recipe = currentRecipes.get(button.dataset.cookRecipe!);
       if (!recipe) return;
@@ -1658,13 +1689,13 @@ function bindMessageActions() {
       cookingConfirmation = createCookingConfirmation(recipe.title, changes);
       const host = button.closest<HTMLElement>('.recipe-card') || button.parentElement;
       const existing = host?.querySelector<HTMLElement>('[data-cooking-confirmation]');
-      if (existing) existing.outerHTML = renderCookingConfirmation(cookingConfirmation, isConnected);
-      else host?.insertAdjacentHTML('beforeend', renderCookingConfirmation(cookingConfirmation, isConnected));
+      if (existing) existing.outerHTML = renderCookingConfirmation(cookingConfirmation, shared.available);
+      else host?.insertAdjacentHTML('beforeend', renderCookingConfirmation(cookingConfirmation, shared.available));
       const confirm = host?.querySelector<HTMLButtonElement>('[data-confirm-cooking]');
       confirm?.addEventListener('click', async () => {
         if (!cookingConfirmation) return;
         confirm.disabled = true;
-        for (const action of confirmCookingActions(cookingConfirmation, isConnected)) {
+        for (const action of confirmCookingActions(cookingConfirmation, shared.available)) {
           if (action.reducer !== 'addPantryItem') continue;
           const result = await commandCoordinator.execute(`cooking:${recipe.id}:${action.payload.name}`, () => householdGateway.executeHouseholdAction(action));
           if (result.status !== 'acknowledged') {
@@ -1675,17 +1706,17 @@ function bindMessageActions() {
           cookingConfirmation = cookingAcknowledged(cookingConfirmation, action.payload.name);
         }
         const rendered = host?.querySelector<HTMLElement>('[data-cooking-confirmation]');
-        if (rendered) rendered.outerHTML = renderCookingConfirmation(cookingConfirmation, isConnected);
+        if (rendered) rendered.outerHTML = renderCookingConfirmation(cookingConfirmation, shared.available);
         showToast(`Started ${recipe.title}. Pantry changes were acknowledged.`);
       });
     };
   });
 
   document.querySelectorAll<HTMLButtonElement>('[data-record-expense]').forEach(button => {
-    button.disabled = !isConnected;
-    button.setAttribute('aria-disabled', String(!isConnected));
+    button.disabled = !shared.available;
+    button.setAttribute('aria-disabled', String(!shared.available));
     button.onclick = async () => {
-      if (!currentSplit || !isConnected) return showToast('Connect to the shared home before recording an expense.', 'error');
+      if (!currentSplit || !shared.available) return showToast(shared.reason || 'Connect to the shared home before recording an expense.', 'error');
       button.textContent = 'Recording';
       button.disabled = true;
       const result = await commandCoordinator.execute(`expense:${Date.now()}`, async () => {
@@ -1765,8 +1796,11 @@ function renderAll() {
   renderPantryRoute();
   renderHeaderAndRailBadges();
   const offline = !isConnected || navigator.onLine === false;
+  const shared = sharedActionAvailability(isConnected, navigator.onLine !== false, currentActiveHomeId());
   const status = document.querySelector('#status-text')!;
-  status.textContent = isDatabaseSynchronized
+  status.textContent = isDatabaseSynchronized && !shared.available && !offline
+    ? shared.reason || 'Choose a home to use shared household tools'
+    : isDatabaseSynchronized
     ? 'Pantry checked just now'
     : isConnected
       ? 'Pantry is checking the home'
@@ -1777,13 +1811,16 @@ function renderAll() {
   const offlineBanner = document.querySelector<HTMLElement>('#offline-banner');
   if (offlineBanner) offlineBanner.hidden = !offline;
   const shelfOffline = document.querySelector<HTMLElement>('#shelf-offline');
-  if (shelfOffline) shelfOffline.hidden = !offline;
-  document.querySelector('#context-panel')?.classList.toggle('is-offline', offline);
-  document.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>('[data-shared-action], #quick-pantry-form input, #quick-pantry-form button, #quick-rule-form input, #quick-rule-form select, #quick-rule-form button')
+  if (shelfOffline) {
+    shelfOffline.hidden = shared.available;
+    shelfOffline.textContent = shared.reason || '';
+  }
+  document.querySelector('#context-panel')?.classList.toggle('is-offline', !shared.available);
+  document.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>('[data-shared-action], #quick-pantry-form input, #quick-pantry-form button, #quick-rule-form input, #quick-rule-form select, #quick-rule-form button, #quick-reminder-form input, #quick-reminder-form button')
     .forEach(control => {
-      control.disabled = offline;
-      control.setAttribute('aria-disabled', String(offline));
-      if (offline) control.title = 'Unavailable while offline';
+      control.disabled = !shared.available;
+      control.setAttribute('aria-disabled', String(!shared.available));
+      if (!shared.available) control.title = shared.reason || 'Shared action unavailable';
       else control.removeAttribute('title');
     });
   bindMessageActions();
@@ -1820,6 +1857,9 @@ function currentActiveHomeId(): bigint | null {
   const value = activeHomeSelection().flatId;
   return /^\d+$/.test(value) ? BigInt(value) : null;
 }
+function currentSharedAvailability() {
+  return sharedActionAvailability(isConnected, navigator.onLine !== false, currentActiveHomeId());
+}
 const householdGateway = createHouseholdGateway(() => connection, currentActiveHomeId);
 let databaseToken = getStoredDatabaseToken();
 let connectionGeneration = 0;
@@ -1852,6 +1892,7 @@ function attachDatabaseListeners(conn: DbConnection) {
   };
   const syncResidences = ifCurrent(() => {
     renderAll();
+    refreshOpenIdentityFlowFromDatabase();
   });
 
   conn.db.residence.onInsert(syncResidences);
@@ -1861,6 +1902,7 @@ function attachDatabaseListeners(conn: DbConnection) {
   const syncActiveHome = ifCurrent(() => {
     renderAll();
     ensureConversation();
+    refreshOpenIdentityFlowFromDatabase();
   });
   conn.db.member.onInsert(syncActiveHome);
   conn.db.member.onUpdate(syncActiveHome);
@@ -1983,6 +2025,7 @@ function connectToDatabase() {
           maybeShowFirstRunOnboarding(isJoined);
           if (isJoined && isDatabaseSynchronized) ensureConversation();
           renderAll();
+          refreshOpenIdentityFlowFromDatabase();
         })
         .onError(errorContext => {
           if (generation !== connectionGeneration) return;
@@ -2006,6 +2049,7 @@ function connectToDatabase() {
           if (isPeopleSynchronized) ensureConversation();
           syncAiStatus();
           renderAll();
+          refreshOpenIdentityFlowFromDatabase();
           void flushActiveOutbox();
         })
         .onError(errorContext => {
@@ -2098,10 +2142,10 @@ function hydrateIdentityState(route: IdentityRoute): IdentityFeatureState {
       residenceName: residences.find(residence => residence.id === home.residenceId)?.name || '',
       active: String(home.id) === active.flatId,
     })),
-    accounts: AuthManager.getSavedAccounts().map(account => ({
+    accounts: AuthManager.getSavedAccounts().filter(account => Boolean(account.identity?.trim() && account.name.trim())).map(account => ({
       identity: account.identity || '',
       displayName: account.name,
-      detail: account.phone || account.email || 'Connected account',
+      detail: account.phone || account.email || `Account ${account.identity?.slice(0, 8)}`,
       active: account.identity === currentIdentity,
     })),
     basics: identityState.basics,
@@ -2292,9 +2336,10 @@ function identityPorts(): IdentityPorts {
   });
 }
 
-function openIdentityFlow(route: IdentityRoute) {
+function openIdentityFlow(route: IdentityRoute, entryRoute?: IdentityRoute) {
   identityCompletionVisible = false;
   if (route !== 'bring-house-together') editingExistingHomeBasics = false;
+  identityEntryRoute = entryRoute;
   identityState = hydrateIdentityState(route);
   const flow = document.querySelector<HTMLElement>('#identity-flow')!;
   const wasHidden = flow.hidden;
@@ -2310,6 +2355,13 @@ function openIdentityFlow(route: IdentityRoute) {
   window.requestAnimationFrame(() => flow.querySelector<HTMLElement>('input, button')?.focus());
 }
 
+function refreshOpenIdentityFlowFromDatabase() {
+  const flow = document.querySelector<HTMLElement>('#identity-flow');
+  if (!flow || flow.hidden || !['home-access', 'accounts'].includes(identityState.route)) return;
+  identityState = hydrateIdentityState(identityState.route);
+  renderIdentityFlowUi();
+}
+
 function closeIdentityFlow() {
   const flow = document.querySelector<HTMLElement>('#identity-flow')!;
   flow.hidden = true;
@@ -2321,6 +2373,7 @@ function closeIdentityFlow() {
   document.body.classList.remove('identity-flow-open');
   identityCompletionVisible = false;
   editingExistingHomeBasics = false;
+  identityEntryRoute = undefined;
   identityReturnFocus?.focus();
   identityReturnFocus = null;
 }
@@ -2336,7 +2389,19 @@ function renderIdentityFlowUi() {
     mount.querySelector<HTMLInputElement>('[name="manualInvitationLink"]')?.addEventListener('focus', event => (event.currentTarget as HTMLInputElement).select());
   }
   mount.querySelectorAll<HTMLButtonElement>('button[data-identity-route]').forEach(button => {
-    button.addEventListener('click', () => openIdentityFlow(button.dataset.identityRoute as IdentityRoute));
+    button.addEventListener('click', () => openIdentityFlow(button.dataset.identityRoute as IdentityRoute, identityState.route));
+  });
+  mount.querySelectorAll<HTMLInputElement>('.identity-fields input').forEach(input => {
+    input.addEventListener('input', () => {
+      identityState = updateIdentityTextField(identityState, input.name, input.value);
+      if (identityState.route === 'create-home') {
+        const action = mount.querySelector<HTMLButtonElement>('[data-identity-action="confirm-create-home"]');
+        if (action) {
+          action.disabled = !homePreview(identityState.createHome);
+          action.setAttribute('aria-disabled', String(action.disabled));
+        }
+      }
+    });
   });
   mount.querySelectorAll<HTMLInputElement>('[name="deletionInput"]').forEach(input => {
     input.addEventListener('input', () => { readIdentityDraft(); renderIdentityFlowUi(); });
@@ -2344,6 +2409,9 @@ function renderIdentityFlowUi() {
   mount.querySelectorAll<HTMLButtonElement>('[data-identity-home]').forEach(button => {
     button.addEventListener('click', async () => {
       identityState = await switchHome(identityState, BigInt(button.dataset.identityHome || '0'), identityPorts());
+      if (identityState.request === 'success' && identityEntryRoute !== 'settings') {
+        identityState = seedFirstTaskChoices({ ...identityState, route: 'first-task' });
+      }
       renderIdentityFlowUi();
       if (identityState.request === 'success') renderAll();
     });
@@ -2365,7 +2433,7 @@ async function handleIdentityAction(action: string) {
   if (action === 'back') {
     const route = editingExistingHomeBasics && identityState.route === 'bring-house-together'
       ? 'settings'
-      : identityBackRoute(identityState.route);
+      : identityBackRoute(identityState.route, identityEntryRoute);
     editingExistingHomeBasics = false;
     identityState = { ...identityState, route, request: 'idle', message: undefined };
   }
@@ -2470,7 +2538,7 @@ async function sendUserMessage(text: string) {
     messageId: message.id,
     role: message.role,
     agent: message.agent,
-    content: encodeStoredMessage(message),
+    content: encodeStoredConversationMessage(message),
     text,
   }, commandKey);
   if (isConnected && navigator.onLine !== false) await flushActiveOutbox();
@@ -2547,7 +2615,7 @@ function closeSettingsBoard() {
 }
 
 function showProfileDialog() {
-  openIdentityFlow('profile');
+  openIdentityFlow('profile', 'settings');
 }
 document.querySelector('#open-profile')!.addEventListener('click', () => {
   closeSettingsBoard();
@@ -2559,6 +2627,10 @@ document.querySelector<HTMLFormElement>('#profile-form')!.addEventListener('subm
   event.preventDefault();
   const identity = currentIdentity || 'local';
   const displayName = document.querySelector<HTMLInputElement>('#profile-name')!.value.trim();
+  if (!displayName) {
+    document.querySelector<HTMLInputElement>('#profile-name')!.focus();
+    return showToast('Name is required.', 'error');
+  }
   const dietaryTags = [...document.querySelectorAll<HTMLInputElement>('input[name="diet"]:checked')].map(input => input.value as DietaryTag);
   const cookingHabits = document.querySelector<HTMLInputElement>('#profile-habits')!.value.split(',').map(value => value.trim()).filter(Boolean);
   scopedHouseholdConfig()?.saveProfile({ identityHex: identity, displayName, dietaryTags, cookingHabits, customSplitExclusions: [] });
@@ -2796,7 +2868,7 @@ document.querySelector<HTMLFormElement>('#quick-reminder-form')?.addEventListene
 // Login Modal Logic
 function showLoginDialog() {
   const user = AuthManager.getCurrentUser();
-  openIdentityFlow(user.isLoggedIn ? 'accounts' : 'welcome');
+  openIdentityFlow(user.isLoggedIn && user.name.trim() ? 'accounts' : 'welcome');
 }
 
 document.querySelector('#open-login-dialog')?.addEventListener('click', () => {

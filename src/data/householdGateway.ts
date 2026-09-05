@@ -1,5 +1,5 @@
-import { tables, type DbConnection } from '../module_bindings';
-import type { HouseholdAction } from '../features/household';
+import { tables, type DbConnection } from '../module_bindings/index.ts';
+import type { HouseholdAction } from '../features/household/index.ts';
 
 export interface HomeScopedRow {
   flatId: bigint;
@@ -82,9 +82,9 @@ export function createHouseholdGateway(
       requireActiveHome();
       return connection().reducers.recordExpense(input);
     },
-    appendConversationMessage(input: { conversationId: string; role: string; agent: string; content: string }) {
+    appendConversationMessage(input: { conversationId: string; messageKey: string; role: string; agent: string; content: string }) {
       requireActiveHome();
-      return connection().reducers.appendConversationMessage(input);
+      return connection().reducers.appendConversationMessageOnce(input);
     },
     executeHouseholdAction(action: HouseholdAction) {
       requireActiveHome();

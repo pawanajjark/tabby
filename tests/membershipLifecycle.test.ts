@@ -53,3 +53,20 @@ test('creating a home and joining it is one atomic membership transaction', () =
   assert.match(block, /ctx\.db\.flat\.insert/);
   assert.match(block, /ctx\.db\.member\.insert/);
 });
+
+test('conversation message retries are idempotent across tabs', () => {
+  const block = exportedBlock('append_conversation_message_once');
+  assert.match(block, /message_key/);
+  assert.match(block, /appendConversationMessage\(ctx, args, messageKey\)/);
+  const helperStart = moduleSource.indexOf('function appendConversationMessage(');
+  const helperEnd = moduleSource.indexOf('\nconst conversationMessageArgs', helperStart);
+  const helper = moduleSource.slice(helperStart, helperEnd);
+  assert.match(helper, /conversationMessageReceipt\.idempotency_key\.find/);
+  assert.match(helper, /conversationMessageReceipt\.insert/);
+  assert.ok(helper.indexOf('idempotency_key.find') < helper.indexOf('conversationMessage.insert'));
+  const routeStart = clientSource.indexOf('async function routeAcknowledgedCommandOnce(');
+  const routeEnd = clientSource.indexOf('\nfunction addMessage(', routeStart);
+  const routeBlock = clientSource.slice(routeStart, routeEnd);
+  assert.match(routeBlock, /navigator\.locks\.request/);
+  assert.match(routeBlock, /reply:\$\{command\.id\}/);
+});

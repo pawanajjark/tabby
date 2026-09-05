@@ -163,3 +163,32 @@ export function canDeleteAccount(input: string): boolean {
 export function selectedFirstTaskItems(items: FirstTaskItem[]): FirstTaskItem[] {
   return items.filter(item => item.selected);
 }
+
+export function updateIdentityTextField(
+  state: IdentityFeatureState,
+  name: string,
+  value: string,
+): IdentityFeatureState {
+  const clean = value.trim();
+  if (state.route === 'profile') {
+    if (name === 'displayName' || name === 'phone' || name === 'email') {
+      return { ...state, profile: { ...state.profile, [name]: clean } };
+    }
+    if (name === 'dietaryTags' || name === 'cookingHabits') {
+      return {
+        ...state,
+        profile: {
+          ...state.profile,
+          [name]: value.split(',').map(item => item.trim()).filter(Boolean),
+        },
+      };
+    }
+  }
+  if (state.route === 'create-home') {
+    const field = name === 'homeDisplayName' ? 'displayName' : name;
+    if (field === 'residenceName' || field === 'address' || field === 'homeName' || field === 'homeLabel' || field === 'displayName') {
+      return { ...state, createHome: { ...state.createHome, [field]: clean } };
+    }
+  }
+  return state;
+}

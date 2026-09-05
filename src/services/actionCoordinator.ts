@@ -14,6 +14,16 @@ export type CommandResult<T = void> =
 
 type CommandTask<T = unknown> = () => Promise<T>;
 
+export function settleWithin<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise.then(
+      value => { clearTimeout(timer); resolve(value); },
+      cause => { clearTimeout(timer); reject(cause); },
+    );
+  });
+}
+
 export class ActionCoordinator {
   private readonly snapshots = new Map<string, CommandSnapshot>();
   private readonly queued = new Map<string, CommandTask>();

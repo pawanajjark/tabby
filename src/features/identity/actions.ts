@@ -43,6 +43,7 @@ function failed(state: IdentityFeatureState, cause: unknown): IdentityFeatureSta
 }
 
 export async function saveProfile(state: IdentityFeatureState, ports: IdentityPorts): Promise<IdentityFeatureState> {
+  if (!state.profile.displayName.trim()) return failed(state, new Error('Name is required.'));
   const next = busy(state);
   try {
     await ports.saveProfile(state.profile);

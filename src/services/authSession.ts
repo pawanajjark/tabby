@@ -78,7 +78,20 @@ function normalizedIdentity(identity: string): string {
 function isAccountProfile(value: unknown): value is AccountProfile {
   if (!value || typeof value !== 'object') return false;
   const account = value as Partial<AccountProfile>;
-  return Boolean(account.identity && typeof account.displayName === 'string' && account.lastConnectedAt);
+  return Boolean(account.identity?.trim() && typeof account.displayName === 'string' && account.lastConnectedAt);
+}
+
+function canonicalAccounts(values: unknown[]): AccountProfile[] {
+  const byIdentity = new Map<string, AccountProfile>();
+  for (const value of values) {
+    if (!isAccountProfile(value)) continue;
+    const account = { ...value, identity: value.identity.trim().toLowerCase() };
+    const previous = byIdentity.get(account.identity);
+    if (!previous || Date.parse(account.lastConnectedAt) >= Date.parse(previous.lastConnectedAt)) {
+      byIdentity.set(account.identity, account);
+    }
+  }
+  return [...byIdentity.values()];
 }
 
 export class AuthSessionStore {
@@ -98,12 +111,14 @@ export class AuthSessionStore {
       const raw = this.storage.getItem(this.storageKey);
       if (!raw) return emptyState();
       const parsed = JSON.parse(raw) as Partial<AuthSessionState>;
-      const accounts = Array.isArray(parsed.accounts) ? parsed.accounts.filter(isAccountProfile) : [];
-      const activeIdentity = accounts.some(account => account.identity === parsed.activeIdentity)
-        ? parsed.activeIdentity as string
+      const accounts = canonicalAccounts(Array.isArray(parsed.accounts) ? parsed.accounts : []);
+      const parsedActiveIdentity = typeof parsed.activeIdentity === 'string' ? parsed.activeIdentity.trim().toLowerCase() : null;
+      const parsedRequestedIdentity = typeof parsed.requestedIdentity === 'string' ? parsed.requestedIdentity.trim().toLowerCase() : null;
+      const activeIdentity = accounts.some(account => account.identity === parsedActiveIdentity)
+        ? parsedActiveIdentity
         : null;
-      const requestedIdentity = accounts.some(account => account.identity === parsed.requestedIdentity)
-        ? parsed.requestedIdentity as string
+      const requestedIdentity = accounts.some(account => account.identity === parsedRequestedIdentity)
+        ? parsedRequestedIdentity
         : null;
       return { version: 1, accounts, activeIdentity, requestedIdentity, recovery: parsed.recovery ?? null };
     } catch {

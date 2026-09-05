@@ -79,6 +79,10 @@ test('fresh sessions show onboarding without waiting for the database connection
   assert.match(mainSource, /showFreshSessionOnboarding\(\);\s*connectToDatabase\(\);/);
 });
 
+test('a connected identity without a profile still opens first-run welcome', () => {
+  assert.match(mainSource, /user\.isLoggedIn && user\.name\.trim\(\) \? 'accounts' : 'welcome'/);
+});
+
 test('onboarding calls the generated TypeScript reducer accessors', () => {
   assert.match(mainSource, /connection\.reducers\.joinFlat\(/);
   assert.match(mainSource, /connection\.reducers\.createAndJoinFlat\(/);

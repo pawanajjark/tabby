@@ -52,6 +52,13 @@ export const ConversationMessage = __t.object("ConversationMessage", {
 });
 export type ConversationMessage = __Infer<typeof ConversationMessage>;
 
+export const ConversationMessageReceipt = __t.object("ConversationMessageReceipt", {
+  idempotencyKey: __t.string(),
+  owner: __t.identity(),
+  messageId: __t.u64(),
+});
+export type ConversationMessageReceipt = __Infer<typeof ConversationMessageReceipt>;
+
 export const Expense = __t.object("Expense", {
   id: __t.u64(),
   flatId: __t.u64(),

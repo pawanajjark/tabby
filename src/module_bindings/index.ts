@@ -36,6 +36,7 @@ import {
 // Import all reducer arg schemas
 import AddPantryItemReducer from "./add_pantry_item_reducer";
 import AppendConversationMessageReducer from "./append_conversation_message_reducer";
+import AppendConversationMessageOnceReducer from "./append_conversation_message_once_reducer";
 import ClearAllDataReducer from "./clear_all_data_reducer";
 import CreateAndJoinFlatReducer from "./create_and_join_flat_reducer";
 import CreateConversationReducer from "./create_conversation_reducer";
@@ -221,6 +222,7 @@ const tablesSchema = __schema({
 const reducersSchema = __reducers(
   __reducerSchema("add_pantry_item", AddPantryItemReducer),
   __reducerSchema("append_conversation_message", AppendConversationMessageReducer),
+  __reducerSchema("append_conversation_message_once", AppendConversationMessageOnceReducer),
   __reducerSchema("clear_all_data", ClearAllDataReducer),
   __reducerSchema("create_and_join_flat", CreateAndJoinFlatReducer),
   __reducerSchema("create_conversation", CreateConversationReducer),
@@ -287,6 +289,7 @@ function __withTableAccessorAliases<T extends object>(target: T, freeze = false)
   }
   return freeze ? Object.freeze(out) : out;
 }
+
 type __DbViewBase = __DbConnectionImpl<typeof REMOTE_MODULE>["db"];
 export type DbView = __DbViewBase & {
   /** @deprecated Use `myAiStatus` instead. This alias will be removed in the next major version. */

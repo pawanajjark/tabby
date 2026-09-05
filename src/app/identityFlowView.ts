@@ -3,7 +3,7 @@ import {
   renderIdentityScreen,
   type IdentityFeatureState,
   type IdentityRoute,
-} from '../features/identity';
+} from '../features/identity/index.ts';
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>'"]/g, character => ({
@@ -28,7 +28,7 @@ function routeFields(state: IdentityFeatureState): string {
         <label>Meals you cook often<input name="cookingHabits" value="${fieldValue(state.profile.cookingHabits.join(', '))}" placeholder="Comma-separated" /></label>
       </div>`;
     case 'home-access':
-      return `<div class="identity-choice-list">${state.homes.length ? state.homes.map(home => `<button type="button" data-identity-home="${home.id}" class="identity-choice${home.active ? ' is-current' : ''}"><strong>${escapeHtml(home.name)}</strong><span>${escapeHtml(`${home.label}, ${home.residenceName}`)}</span></button>`).join('') : '<p class="identity-empty">No synchronized homes are linked to this account yet.</p>'}</div>`;
+      return `<section class="identity-choice-section"><h2>Homes for this account</h2><div class="identity-choice-list">${state.homes.length ? state.homes.map(home => `<button type="button" data-identity-home="${home.id}" class="identity-choice${home.active ? ' is-current' : ''}"><strong>${escapeHtml(home.name)}</strong><span>${escapeHtml(`${home.label}, ${home.residenceName}`)}</span></button>`).join('') : '<p class="identity-empty">No synchronized homes are linked to this account yet.</p>'}</div></section>`;
     case 'create-home':
       return `<div class="identity-fields identity-home-fields">
         <label>Residence name<input name="residenceName" value="${fieldValue(state.createHome.residenceName)}" required /></label>
@@ -57,7 +57,7 @@ function routeFields(state: IdentityFeatureState): string {
     case 'first-task':
       return `<div class="identity-fields"><label>Add a real pantry item<input name="firstTaskLabel" placeholder="What is already in your home?" /></label><button type="button" class="secondary-button" data-identity-action="add-first-item">Add item</button></div><div class="identity-choice-list">${state.firstTaskItems.map(item => `<label class="identity-choice"><input type="checkbox" data-first-item="${escapeHtml(item.id)}" ${item.selected ? 'checked' : ''} /><span>${escapeHtml(item.label)}</span></label>`).join('')}</div>`;
     case 'accounts':
-      return `<div class="identity-choice-list">${state.accounts.length ? state.accounts.map(account => `<button type="button" data-identity-account="${escapeHtml(account.identity)}" class="identity-choice${account.active ? ' is-current' : ''}"><strong>${escapeHtml(account.displayName || 'Connected account')}</strong><span>${escapeHtml(account.detail)}</span></button>`).join('') : '<p class="identity-empty">No other saved accounts are available on this device.</p>'}</div><div class="identity-choice-list">${state.homes.map(home => `<button type="button" data-identity-home="${home.id}" class="identity-choice${home.active ? ' is-current' : ''}"><strong>${escapeHtml(home.name)}</strong><span>${escapeHtml(`${home.label}, ${home.residenceName}`)}</span></button>`).join('')}</div>`;
+      return `<section class="identity-choice-section"><h2>Saved accounts</h2><div class="identity-choice-list">${state.accounts.length ? state.accounts.map(account => `<button type="button" data-identity-account="${escapeHtml(account.identity)}" class="identity-choice${account.active ? ' is-current' : ''}"><strong>${escapeHtml(account.displayName)}</strong><span>${escapeHtml(account.detail)}</span></button>`).join('') : '<p class="identity-empty">No other saved accounts are available on this device.</p>'}</div></section><section class="identity-choice-section"><h2>Homes for this account</h2><div class="identity-choice-list">${state.homes.map(home => `<button type="button" data-identity-home="${home.id}" class="identity-choice${home.active ? ' is-current' : ''}"><strong>${escapeHtml(home.name)}</strong><span>${escapeHtml(`${home.label}, ${home.residenceName}`)}</span></button>`).join('')}</div></section>`;
     case 'settings':
       return `<nav class="identity-settings-links" aria-label="Settings sections">
         <button type="button" data-identity-route="profile">Profile</button>
@@ -93,7 +93,8 @@ export function renderIdentityFlow(state: IdentityFeatureState, completion = fal
   </div>`;
 }
 
-export function identityBackRoute(route: IdentityRoute): IdentityRoute {
+export function identityBackRoute(route: IdentityRoute, entryRoute?: IdentityRoute): IdentityRoute {
+  if (entryRoute === 'settings' && (route === 'profile' || route === 'home-access')) return 'settings';
   if (route === 'profile' || route === 'home-access') return 'welcome';
   if (route === 'create-home' || route === 'join-home') return 'home-access';
   if (route === 'bring-house-together' || route === 'first-task') return 'home-access';
