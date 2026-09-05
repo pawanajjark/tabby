@@ -72,6 +72,7 @@ import {
   switchAccount,
   switchHome,
   homePreview,
+  selectedFirstTaskItems,
   updateIdentityTextField,
   type IdentityFeatureState,
   type IdentityPorts,
@@ -178,7 +179,7 @@ app.innerHTML = `
       </header>
 
       <div class="conversation-workspace">
-        <div id="conversation-feature-mount" class="conversation-feature-mount"></div>
+        <div id="conversation-feature-mount" class="conversation-feature-mount" hidden></div>
         <div class="conversation-live-detail">
           <div class="conversation conversation-transcript" id="conversation" aria-live="polite"></div>
         </div>
@@ -232,16 +233,16 @@ app.innerHTML = `
         <button id="mobile-profile">Your profile</button>
         <button id="mobile-ai-settings">Settings</button>
       </div>
-      <section class="context-section">
+      <section class="context-section shelf-people">
         <div class="section-heading"><h3>People</h3><span id="people-count">0</span></div>
         <div id="people-list" class="context-list"></div>
       </section>
-      <section class="context-section">
-        <div class="section-heading"><h3>HOME NOTES</h3><span id="memory-count">0</span></div>
+      <section class="context-section shelf-notes">
+        <div class="section-heading"><h3>Home notes</h3><span id="memory-count">0</span></div>
         <div id="memory-list" class="context-list"></div>
       </section>
-      <section class="context-section">
-        <div class="section-heading"><h3>PANTRY</h3><span id="pantry-count">0</span></div>
+      <section class="context-section shelf-pantry">
+        <div class="section-heading"><h3>In the kitchen</h3><span id="pantry-count">0</span></div>
         <form id="quick-pantry-form" class="quick-pantry-form">
           <input id="quick-pantry-name" placeholder="Add an item, such as milk" autocomplete="off" required />
           <input id="quick-pantry-qty" type="number" min="1" value="1" />
@@ -249,8 +250,8 @@ app.innerHTML = `
         </form>
         <div id="pantry-list" class="context-list"></div>
       </section>
-      <section class="context-section">
-        <div class="section-heading"><h3>KITCHEN</h3><span id="rules-count">0</span></div>
+      <section class="context-section shelf-agreements">
+        <div class="section-heading"><h3>House agreements</h3><span id="rules-count">0</span></div>
         <form id="quick-rule-form" class="quick-rule-form">
           <select id="quick-rule-type">
             <option value="explicit">Agreed</option>
@@ -791,9 +792,58 @@ function ensureConversation() {
   renderConversationPicker();
 }
 
+const EMPTY_CONVERSATION_STARTERS = [
+  {
+    label: 'What should we restock this week?',
+    prompt: 'What should we restock this week?',
+    icon: '<path d="M4 10h16l-2 9H6l-2-9Zm4 0 4-6 4 6M9 14v2m3-2v2m3-2v2"/>',
+  },
+  {
+    label: 'What can we cook with what’s here?',
+    prompt: 'What can we cook with what’s here?',
+    icon: '<path d="M6 3v6a3 3 0 0 0 3 3V3m-3 4h3m6-4v18m0-18c3 2 4 5 4 8h-4"/>',
+  },
+  {
+    label: 'Split this bill fairly.',
+    prompt: 'Help me review and split a bill fairly.',
+    icon: '<path d="M6 3h12v18l-2-1-2 1-2-1-2 1-2-1-2 1V3Zm3 5h6m-6 4h6m-6 4h4"/>',
+  },
+] as const;
+
+function renderEmptyConversationHome(): string {
+  return `<section class="empty-conversation-home" aria-labelledby="empty-home-title">
+    <div class="empty-conversation-copy">
+      <h1 id="empty-home-title">What needs handling?</h1>
+      <p>Ask Tabby about groceries, dinner, a bill, or the home.</p>
+    </div>
+    <div class="empty-conversation-starters" aria-label="Suggested first messages">
+      ${EMPTY_CONVERSATION_STARTERS.map(starter => `<button type="button" data-empty-prompt="${escapeHtml(starter.prompt)}"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${starter.icon}</svg><span>${escapeHtml(starter.label)}</span><span aria-hidden="true" class="starter-arrow">↗</span></button>`).join('')}
+    </div>
+  </section>`;
+}
+
+function bindEmptyConversationStarters() {
+  document.querySelectorAll<HTMLButtonElement>('[data-empty-prompt]').forEach(button => {
+    button.addEventListener('click', () => {
+      const composer = document.querySelector<HTMLTextAreaElement>('#chat-input');
+      if (!composer) return;
+      composer.value = button.dataset.emptyPrompt || '';
+      composer.dispatchEvent(new Event('input', { bubbles: true }));
+      composer.focus();
+    });
+  });
+}
+
 function renderConversation() {
   const target = document.querySelector<HTMLElement>('#conversation')!;
-  target.innerHTML = conversation.map(message => {
+  const visibleConversation = conversation.filter(message => message.id !== 'welcome');
+  if (visibleConversation.length === 0) {
+    target.innerHTML = renderEmptyConversationHome();
+    bindEmptyConversationStarters();
+    renderConversationFeature();
+    return;
+  }
+  target.innerHTML = `<div class="conversation-day-label">Private chat</div>${visibleConversation.map(message => {
     const agentNames: Record<MessageAgent, string> = {
       tabby: 'Tabby',
       general: 'Tabby',
@@ -820,7 +870,7 @@ function renderConversation() {
           </div>` : ''}
       </article>
     `;
-  }).join('');
+  }).join('')}`;
   bindMessageActions();
   document.querySelectorAll<HTMLButtonElement>('[data-retry-message]').forEach(button => {
     button.addEventListener('click', () => void retryMessage(button.dataset.retryMessage || ''));
@@ -2142,6 +2192,7 @@ function hydrateIdentityState(route: IdentityRoute): IdentityFeatureState {
       residenceName: residences.find(residence => residence.id === home.residenceId)?.name || '',
       active: String(home.id) === active.flatId,
     })),
+    homesSynchronized: isDatabaseSynchronized,
     accounts: AuthManager.getSavedAccounts().filter(account => Boolean(account.identity?.trim() && account.name.trim())).map(account => ({
       identity: account.identity || '',
       displayName: account.name,
@@ -2412,11 +2463,25 @@ function renderIdentityFlowUi() {
   mount.querySelectorAll<HTMLInputElement>('[name="deletionInput"]').forEach(input => {
     input.addEventListener('input', () => { readIdentityDraft(); renderIdentityFlowUi(); });
   });
+  mount.querySelectorAll<HTMLInputElement>('[data-first-item]').forEach(input => {
+    input.addEventListener('change', () => {
+      readIdentityDraft();
+      const selected = selectedFirstTaskItems(identityState.firstTaskItems);
+      const action = mount.querySelector<HTMLButtonElement>('[data-identity-action="save-first-items"]');
+      if (!action) return;
+      action.disabled = selected.length === 0;
+      action.setAttribute('aria-disabled', String(action.disabled));
+      action.textContent = `Save ${selected.length} item${selected.length === 1 ? '' : 's'}`;
+    });
+  });
   mount.querySelectorAll<HTMLButtonElement>('[data-identity-home]').forEach(button => {
     button.addEventListener('click', async () => {
       identityState = await switchHome(identityState, BigInt(button.dataset.identityHome || '0'), identityPorts());
       if (identityState.request === 'success' && identityEntryRoute !== 'settings') {
-        identityState = seedFirstTaskChoices({ ...identityState, route: 'first-task' });
+        renderAll();
+        closeIdentityFlow();
+        navigateTo('conversations');
+        return;
       }
       renderIdentityFlowUi();
       if (identityState.request === 'success') renderAll();

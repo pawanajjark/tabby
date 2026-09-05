@@ -129,6 +129,20 @@ test('join home lists available homes without asking for an invitation code', ()
   assert.doesNotMatch(html, /invite code|invitation/i);
 });
 
+test('join home does not claim the database is empty before homes synchronize', () => {
+  const state = createIdentityState('join-home');
+
+  const loadingHtml = renderIdentityFlow(state);
+
+  assert.match(loadingHtml, /Loading homes/i);
+  assert.doesNotMatch(loadingHtml, /No homes are available/i);
+
+  state.homesSynchronized = true;
+  const synchronizedEmptyHtml = renderIdentityFlow(state);
+
+  assert.match(synchronizedEmptyHtml, /No homes are available/i);
+});
+
 test('an open join-home screen refreshes when synchronized homes arrive', () => {
   const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
   const refreshStart = mainSource.indexOf('function refreshOpenIdentityFlowFromDatabase()');
@@ -137,6 +151,35 @@ test('an open join-home screen refreshes when synchronized homes arrive', () => 
 
   assert.match(refreshBlock, /'join-home'/);
   assert.match(refreshBlock, /hydrateIdentityState\(identityState\.route\)/);
+});
+
+test('checking a first-task pantry item immediately refreshes the save action', () => {
+  const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+  const renderStart = mainSource.indexOf('function renderIdentityFlowUi()');
+  const renderEnd = mainSource.indexOf('\nasync function handleIdentityAction', renderStart);
+  const renderBlock = mainSource.slice(renderStart, renderEnd);
+
+  assert.match(renderBlock, /querySelectorAll<HTMLInputElement>\('\[data-first-item\]'\)/);
+  assert.match(renderBlock, /input\.addEventListener\('change'/);
+  assert.match(renderBlock, /readIdentityDraft\(\)/);
+  assert.match(renderBlock, /selectedFirstTaskItems\(identityState\.firstTaskItems\)/);
+  assert.match(renderBlock, /action\.disabled = selected\.length === 0/);
+  assert.match(renderBlock, /action\.textContent = `Save \$\{selected\.length\}/);
+});
+
+test('selecting an available home finishes joining without opening pantry setup', () => {
+  const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+  const renderStart = mainSource.indexOf('function renderIdentityFlowUi()');
+  const renderEnd = mainSource.indexOf('\nasync function handleIdentityAction', renderStart);
+  const renderBlock = mainSource.slice(renderStart, renderEnd);
+  const homeSelectionStart = renderBlock.indexOf("mount.querySelectorAll<HTMLButtonElement>('[data-identity-home]')");
+  const homeSelectionEnd = renderBlock.indexOf("mount.querySelectorAll<HTMLButtonElement>('[data-identity-account]')", homeSelectionStart);
+  const homeSelectionBlock = renderBlock.slice(homeSelectionStart, homeSelectionEnd);
+
+  assert.match(homeSelectionBlock, /identityEntryRoute !== 'settings'/);
+  assert.match(homeSelectionBlock, /closeIdentityFlow\(\)/);
+  assert.match(homeSelectionBlock, /navigateTo\('conversations'\)/);
+  assert.doesNotMatch(homeSelectionBlock, /first-task|seedFirstTaskChoices/);
 });
 
 test('the active conversation never reports its messages as unread', () => {

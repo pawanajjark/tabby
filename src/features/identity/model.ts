@@ -102,6 +102,7 @@ export interface IdentityFeatureState {
   invitation: InvitationLookupState;
   basics: HomeBasicsDraft;
   homes: HomeChoice[];
+  homesSynchronized: boolean;
   accounts: AccountChoice[];
   firstTaskItems: FirstTaskItem[];
   deletionInput: string;
@@ -141,6 +142,7 @@ export function createIdentityState(route: IdentityRoute = 'welcome'): IdentityF
     invitation: { kind: 'empty', code: '' },
     basics: { ...DEFAULT_BASICS },
     homes: [],
+    homesSynchronized: false,
     accounts: [],
     firstTaskItems: [],
     deletionInput: '',
