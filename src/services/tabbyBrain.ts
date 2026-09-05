@@ -26,9 +26,9 @@ export interface BrainAnalysis {
 
 const INTENT_RULES: Array<[AgentIntent, RegExp]> = [
   ['billing', /\b(bill|expense|receipt|split|paid|owe|owed|cost|total|reimburse)\b|(?:₹|rs\.?|inr|\$)\s*[\d,]+|(?:^|\n).+[-:]\s*\d+(?:\.\d{1,2})?\s*$/im],
-  ['chef', /\b(cook|cooking|recipe|meal|dinner|lunch|breakfast|hungry|dish|chef|pizza)\b|\b(?:how (?:do|can) i|can you|help me|make me|what can i)\s+(?:make|prepare)\b/i],
+  ['context', /\b(i like|i love|i prefer|i hate|i don't like|i dislike|i avoid|i eat|i don't eat|except when|allergic|allergy|vegetarian|vegan|eggetarian|halal|jain|diet|preference|preferences|who likes|who eats|what do we know|remember)\b/i],
+  ['chef', /\b(recipe|recipes|how (?:to|do i|can i) (?:cook|make|bake|prepare)|what can (?:i|we) (?:cook|make)|what should (?:i|we) (?:cook|make)|suggest (?:a |some )?(?:recipe|meal|dinner|lunch)|let's cook|cook (?:something|dinner|lunch|breakfast))\b/i],
   ['grocery', /\b(bought|buy|pantry|grocery|groceries|restock|stock|shopping|ran out|need more)\b/i],
-  ['context', /\b(remember|preference|preferences|allerg|diet|who likes|who eats|what does|what do we know|household context)\b/i],
 ];
 
 const SAFE_SHARED_CATEGORIES = new Set<MemoryCategory>(['diet', 'allergy', 'food_preference', 'routine']);
@@ -87,12 +87,17 @@ export class TabbyBrain {
         }>;
       }>(
         `Analyze this household chat message for routing and durable preferences.\n\nMessage: ${message}`,
-        `You are TabbyBrain, a hidden household intent and memory classifier.
-Route to exactly one intent: grocery, chef, billing, context, or general.
-Extract only facts explicitly stated by the speaker. Never infer sensitive traits.
-Shared facts are limited to diet, food allergy, food preference, and household cooking routine information that helps roommates coordinate groceries, meals, or bills.
-Everything else must be private. Return an empty facts array when nothing durable was stated.
-Return JSON with intent and facts. Each fact has category, key, value, and visibility.`
+        `You are TabbyBrain, an accurate household intent and memory classifier.
+Route to exactly ONE intent:
+- "context": When the user is stating or updating a personal/household preference, diet, allergy, like/dislike (e.g. "I like chicken", "I prefer mutton biriyani", "except when...", "I am vegetarian").
+- "chef": ONLY when the user explicitly asks for recipes, instructions on how to cook/make a dish, or meal suggestions (e.g. "How do I make biriyani?", "Give me a dinner recipe", "What can I cook?").
+- "grocery": When discussing buying items, restocking, shopping lists, or pantry additions.
+- "billing": When discussing receipts, expenses, paying bills, splitting costs.
+- "general": General conversation or queries that don't match above.
+
+Extract only facts explicitly stated by the speaker (likes, dislikes, exceptions, diets, allergies).
+Shared facts are limited to diet, food allergy, food preference, and household cooking routine.
+Return JSON with intent and facts.`
       );
 
       if (result?.intent && ['grocery', 'chef', 'billing', 'context', 'general'].includes(result.intent)) {
@@ -108,6 +113,17 @@ Return JSON with intent and facts. Each fact has category, key, value, and visib
         });
 
       if (aiFacts.length > 0) facts = this.mergeFacts(heuristicFacts, aiFacts);
+    }
+
+    // Strict Guard: Chef intent should ONLY trigger on explicit recipe or cooking requests
+    const isExplicitCookingRequest = /\b(?:recipe|recipes|how (?:to|do i|can i) (?:cook|make|bake|prepare)|what can (?:i|we) (?:cook|make)|what should (?:i|we) (?:cook|make)|suggest (?:a |some )?(?:recipe|meal|dinner|lunch)|let's cook|cook (?:something|dinner|lunch|breakfast)|prepare (?:a |some )?(?:meal|dinner|lunch|breakfast))\b/i.test(message);
+
+    if (facts.length > 0 || !isExplicitCookingRequest) {
+      if (intent === 'chef' && !isExplicitCookingRequest) {
+        intent = facts.length > 0 ? 'context' : 'general';
+      } else if (facts.length > 0 && intent !== 'grocery' && intent !== 'billing' && !isExplicitCookingRequest) {
+        intent = 'context';
+      }
     }
 
     return {
@@ -180,20 +196,28 @@ Return JSON with intent and facts. Each fact has category, key, value, and visib
 
   private static extractFacts(message: string): MemoryFact[] {
     const facts: MemoryFact[] = [];
-    const diet = message.match(/\b(?:i am|i'm|im)\s+(vegetarian|vegan|eggetarian|jain|halal|gluten[- ]free|lactose[- ]intolerant)\b/i);
-    if (diet) facts.push(makeFact('diet', 'diet', diet[1].replace(/-/g, ' ').toLowerCase(), 'shared'));
+    const sentences = message.split(/(?<=[.!?\n])\s+/).filter(s => s.trim().length > 0);
+    const targetPhrases = sentences.length > 1 ? [message, ...sentences] : [message];
 
-    const allergy = message.match(/\b(?:i am|i'm|im)?\s*allergic to\s+([^.!?]+)/i);
-    if (allergy) facts.push(makeFact('allergy', 'allergy', `Allergic to ${normalized(allergy[1])}`, 'shared'));
+    for (const phrase of targetPhrases) {
+      const diet = phrase.match(/\b(?:i am|i'm|im)\s+(vegetarian|vegan|eggetarian|jain|halal|gluten[- ]free|lactose[- ]intolerant)\b/i);
+      if (diet) facts.push(makeFact('diet', 'diet', diet[1].replace(/-/g, ' ').toLowerCase(), 'shared'));
 
-    const avoid = message.match(/\b(?:i do not eat|i don't eat|i avoid|i cannot eat|i can't eat)\s+([^.!?]+)/i);
-    if (avoid) facts.push(makeFact('food_preference', 'avoids', `Avoids ${normalized(avoid[1])}`, 'shared'));
+      const allergy = phrase.match(/\b(?:i am|i'm|im)?\s*allergic to\s+([^.!?]+)/i);
+      if (allergy) facts.push(makeFact('allergy', 'allergy', `Allergic to ${normalized(allergy[1])}`, 'shared'));
 
-    const like = message.match(/\b(?:i like|i love|i prefer|my favorite (?:food|dish|meal) is)\s+([^.!?]+)/i);
-    if (like) facts.push(makeFact('food_preference', 'likes', `Likes ${normalized(like[1])}`, 'shared'));
+      const avoid = phrase.match(/\b(?:i do not eat|i don't eat|i avoid|i cannot eat|i can't eat)\s+([^.!?]+)/i);
+      if (avoid) facts.push(makeFact('food_preference', 'avoids', `Avoids ${normalized(avoid[1])}`, 'shared'));
 
-    const routine = message.match(/\b(?:i usually|i normally|every (?:morning|evening|week|weekend) i)\s+([^.!?]+)/i);
-    if (routine) facts.push(makeFact('routine', 'routine', normalized(routine[0]), 'shared'));
+      const like = phrase.match(/\b(?:i like|i love|my favorite (?:food|dish|meal) is)\s+([^.!?]+)/i);
+      if (like) facts.push(makeFact('food_preference', 'likes', `Likes ${normalized(like[1])}`, 'shared'));
+
+      const preference = phrase.match(/\b(?:i generally prefer|i prefer|except when it is in|except when|i dislike|i hate)\s+([^.!?]+)/i);
+      if (preference) facts.push(makeFact('food_preference', 'preference', normalized(preference[0]), 'shared'));
+
+      const routine = phrase.match(/\b(?:i usually|i normally|every (?:morning|evening|week|weekend) i)\s+([^.!?]+)/i);
+      if (routine) facts.push(makeFact('routine', 'routine', normalized(routine[0]), 'shared'));
+    }
 
     return this.mergeFacts([], facts);
   }

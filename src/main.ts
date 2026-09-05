@@ -958,9 +958,6 @@ async function routeMessage(text: string) {
         const plan = await AgentShopping.generateShoppingPlan(pantryData(), getRoommates(), text);
         addMessage({ role: 'assistant', agent: 'grocery', contentHtml: renderShoppingPlan(plan) });
       }
-    } else if (analysis.intent === 'chef') {
-      const plan = await AgentCooking.generateRecipes(pantryData(), getRoommates(), text);
-      addMessage({ role: 'assistant', agent: 'chef', contentHtml: renderCookingPlan(plan) });
     } else if (analysis.intent === 'billing') {
       if (!attachedReceipt && !/\d/.test(text)) {
         addMessage({ role: 'assistant', agent: 'billing', text: 'Paste one item per line, such as “Rice - 450”, or attach a receipt image. I will apply the household dietary rules to the split.' });
@@ -971,25 +968,20 @@ async function routeMessage(text: string) {
         );
         addMessage({ role: 'assistant', agent: 'billing', contentHtml: renderSplit(split) });
       }
-    } else if (analysis.intent === 'context') {
+    } else if (analysis.intent === 'context' || analysis.shareableFacts.length > 0) {
       const answer = TabbyBrain.answerContextQuestion(text, getSharedContext());
+      const factSummaries = analysis.shareableFacts.map(f => f.value).join(', ');
+      const responseText = factSummaries
+        ? `Noted! I added that preference ("${factSummaries}") to the shared household context. Other housemates and agents can account for it.`
+        : (answer || 'I added that preference to the shared household context. Other housemates can ask me about it when planning food or expenses.');
       addMessage({
         role: 'assistant',
         agent: 'context',
-        text: answer || (analysis.shareableFacts.length && isConnected
-          ? 'I added that preference to the shared household context. Other housemates can ask me about it when planning food or expenses.'
-          : analysis.shareableFacts.length
-            ? 'I saved that preference privately. It will need a live home connection before it can be shared with your housemates.'
-          : 'I do not have a relevant shared fact yet. I only share preferences that someone states explicitly.'),
+        text: responseText,
       });
-    } else if (analysis.shareableFacts.length) {
-      addMessage({
-        role: 'assistant',
-        agent: 'context',
-        text: isConnected
-          ? 'I saved that as a household-safe preference so the other agents and your housemates can account for it.'
-          : 'I saved that preference privately. Connect to the shared home before it can be available to housemates.',
-      });
+    } else if (analysis.intent === 'chef') {
+      const plan = await AgentCooking.generateRecipes(pantryData(), getRoommates(), text);
+      addMessage({ role: 'assistant', agent: 'chef', contentHtml: renderCookingPlan(plan) });
     } else {
       if (!AIProvider.hasApiKey()) {
         addMessage({
