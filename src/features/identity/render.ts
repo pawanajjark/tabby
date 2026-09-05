@@ -54,7 +54,7 @@ export function renderIdentityScreen(state: IdentityFeatureState): IdentityScree
         { id: 'preferences', heading: 'Household preferences', body: 'Dietary choices and cooking habits help with shared planning.' },
       ], actions: [{ id: 'save-profile', label: 'Continue', tone: 'primary', disabled: !state.profile.displayName.trim() || !state.profile.phone.trim() }] };
     case 'home-access':
-      return { ...base, body: 'Choose an existing home or create a new one.', actions: [] };
+      return { ...base, body: 'Choose any available home or create a new one.', actions: [] };
     case 'create-home': {
       const preview = homePreview(state.createHome);
       return { ...base, body: 'Name the place in a way everyone will recognize.', sections: [
@@ -62,27 +62,15 @@ export function renderIdentityScreen(state: IdentityFeatureState): IdentityScree
         ...(preview ? [{ id: 'preview', heading: 'Preview', rows: [{ title: preview.title, detail: `${preview.location}. ${preview.memberLabel}` }] }] : []),
       ], actions: [{ id: 'confirm-create-home', label: 'Create home', tone: 'primary', disabled: !preview }] };
     }
-    case 'join-home': {
-      const invitation = state.invitation;
-      const sections: ScreenSection[] = [{ id: 'invitation-entry', heading: 'Six-character invitation', body: 'Enter the invitation exactly as it was shared.' }];
-      if (invitation.kind === 'loading') sections.push({ id: 'lookup', body: 'Looking up this home…' });
-      if (invitation.kind === 'invalid' || invitation.kind === 'error') sections.push({ id: 'lookup-error', body: invitation.message });
-      if (invitation.kind === 'valid') sections.push({ id: 'preview', heading: invitation.preview.homeName, rows: [
-        { title: invitation.preview.residenceName, detail: invitation.preview.homeLabel },
-        { title: `Invited by ${invitation.preview.invitedByName}`, detail: `${invitation.preview.memberCount} current members` },
-      ] });
-      return { ...base, sections, actions: [{ id: 'confirm-join', label: 'Join this home', tone: 'primary', disabled: invitation.kind !== 'valid' }] };
-    }
+    case 'join-home':
+      return { ...base, body: 'Select a home below to join it.', actions: [] };
     case 'bring-house-together':
-      return { ...base, body: 'Invite housemates now, then set the shared defaults everyone will see.', sections: [
-        { id: 'invite', heading: 'Invitation link', body: 'Copy a private invitation or address it to an email or phone number.' },
+      return { ...base, body: 'Tell housemates to choose this home from the available list, then set the shared defaults everyone will see.', sections: [
         { id: 'basics', heading: 'Household basics', rows: [
           { title: 'Quiet hours', detail: state.basics.quietHoursStart && state.basics.quietHoursEnd ? `${state.basics.quietHoursStart} to ${state.basics.quietHoursEnd}` : 'Not set' },
           { title: 'Default bill split', detail: state.basics.defaultBillingSplit },
-          { title: 'Invitations', detail: state.basics.invitesEnabled ? 'Enabled' : 'Paused' },
         ] },
       ], actions: [
-        { id: 'copy-invitation', label: 'Copy invitation', tone: 'secondary' },
         { id: 'save-basics', label: 'Save and continue', tone: 'primary' },
       ] };
     case 'first-task': {

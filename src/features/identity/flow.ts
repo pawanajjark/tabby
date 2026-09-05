@@ -15,7 +15,7 @@ export const IDENTITY_STEPS: Record<IdentityRoute, IdentityStepMetadata> = {
   'home-access': { route: 'home-access', title: 'Choose or create a home', shortTitle: 'Home', mobileStep: { current: 2, total: 3 }, back: 'profile' },
   'create-home': { route: 'create-home', title: 'Create a home', shortTitle: 'Create', mobileStep: { current: 2, total: 3 }, back: 'home-access', next: 'bring-house-together' },
   'join-home': { route: 'join-home', title: 'Join a home', shortTitle: 'Join', mobileStep: { current: 2, total: 3 }, back: 'home-access', next: 'first-task' },
-  'bring-house-together': { route: 'bring-house-together', title: 'Bring the house together', shortTitle: 'Invite', mobileStep: { current: 3, total: 3 }, back: 'create-home', next: 'first-task' },
+  'bring-house-together': { route: 'bring-house-together', title: 'Bring the house together', shortTitle: 'Setup', mobileStep: { current: 3, total: 3 }, back: 'create-home', next: 'first-task' },
   'first-task': { route: 'first-task', title: 'What needs handling?', shortTitle: 'First task' },
   accounts: { route: 'accounts', title: 'Accounts and homes', shortTitle: 'Accounts' },
   settings: { route: 'settings', title: 'Settings', shortTitle: 'Settings' },

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { identityBackRoute, renderIdentityFlow } from '../src/app/identityFlowView.ts';
 import {
@@ -111,6 +112,31 @@ test('accounts and homes are rendered once in the account chooser', () => {
 
   assert.equal(html.match(/Pawan/g)?.length, 1);
   assert.equal(html.match(/Maple Home/g)?.length, 1);
+});
+
+test('join home lists available homes without asking for an invitation code', () => {
+  const state = createIdentityState('join-home');
+  state.homes = [
+    { id: 7n, name: 'Maple Home', label: '7A', residenceName: 'Maple House', active: false },
+    { id: 8n, name: 'Cedar Home', label: '8B', residenceName: 'Cedar House', active: true },
+  ];
+
+  const html = renderIdentityFlow(state);
+
+  assert.match(html, /AVAILABLE HOMES/);
+  assert.match(html, /data-identity-home="7"/);
+  assert.match(html, /Click to join this home/);
+  assert.doesNotMatch(html, /invite code|invitation/i);
+});
+
+test('an open join-home screen refreshes when synchronized homes arrive', () => {
+  const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+  const refreshStart = mainSource.indexOf('function refreshOpenIdentityFlowFromDatabase()');
+  const refreshEnd = mainSource.indexOf('\nfunction closeIdentityFlow()', refreshStart);
+  const refreshBlock = mainSource.slice(refreshStart, refreshEnd);
+
+  assert.match(refreshBlock, /'join-home'/);
+  assert.match(refreshBlock, /hydrateIdentityState\(identityState\.route\)/);
 });
 
 test('the active conversation never reports its messages as unread', () => {

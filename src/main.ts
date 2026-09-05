@@ -62,12 +62,9 @@ import {
   connectAi,
   createHome,
   createIdentityState,
-  createInvitation,
   createSpacetimeIdentityPorts,
   deleteAccount,
   disconnectAi as disconnectIdentityAi,
-  joinHome,
-  lookupInvitation,
   saveFirstTask,
   saveHomeBasics,
   saveProfile,
@@ -441,7 +438,6 @@ let identityCompletionVisible = false;
 let editingExistingHomeBasics = false;
 let identityEntryRoute: IdentityRoute | undefined;
 let lastAiConnectionError: { model: string; message: string } | null = null;
-let manualInvitation: { link: string; identity: string; homeId: string } | null = null;
 const outboxes = new Map<string, PersistentOutbox>();
 const pendingDeletions = new Map<string, PendingDeletion>();
 const pendingDeletionHomes = new Map<string, string>();
@@ -652,8 +648,7 @@ async function flushActiveOutbox() {
   const deliveries = new ConversationDeliveryStore(currentIdentity || 'local').projectOutbox(bindings, commands);
   for (const delivery of deliveries) {
     const message = conversation.find(candidate => candidate.id === delivery.messageId);
-    if (!message) continue;
-    updateMessage(message.id, { delivery: delivery.status });
+    if (message) updateMessage(message.id, { delivery: delivery.status });
     const command = commands.find(candidate => candidate.id === delivery.commandId);
     if (delivery.status === 'sent' && command) {
       const payload = command.payload as MessageOutboxPayload;
@@ -665,10 +660,15 @@ async function flushActiveOutbox() {
 async function routeAcknowledgedCommandOnce(command: Readonly<OutboxCommand>, payload: MessageOutboxPayload) {
   const routedKey = `tabby_outbox_routed:${command.id}`;
   const routeOnce = async () => {
-    if (localStorage.getItem(routedKey)) return;
+    if (localStorage.getItem(routedKey) === '1') return;
     localStorage.setItem(routedKey, 'routing');
-    await routeMessage(payload.text, `reply:${command.id}`);
-    localStorage.setItem(routedKey, '1');
+    try {
+      await routeMessage(payload.text, `reply:${command.id}`);
+      localStorage.setItem(routedKey, '1');
+    } catch (cause) {
+      localStorage.removeItem(routedKey);
+      throw cause;
+    }
   };
   if (navigator.locks) {
     await navigator.locks.request(`tabby:${routedKey}`, routeOnce);
@@ -2247,7 +2247,7 @@ function readIdentityDraft(): void {
     identityState = { ...identityState, basics: {
       quietHoursStart: text('quietHoursStart'), quietHoursEnd: text('quietHoursEnd'),
       defaultBillingSplit: text('defaultBillingSplit') || 'equal',
-      invitesEnabled: data.get('invitesEnabled') === 'on',
+      invitesEnabled: identityState.basics.invitesEnabled,
     } };
   } else if (identityState.route === 'delete-account') {
     identityState = { ...identityState, deletionInput: text('deletionInput') };
@@ -2359,7 +2359,7 @@ function openIdentityFlow(route: IdentityRoute, entryRoute?: IdentityRoute) {
 
 function refreshOpenIdentityFlowFromDatabase() {
   const flow = document.querySelector<HTMLElement>('#identity-flow');
-  if (!flow || flow.hidden || !['home-access', 'accounts'].includes(identityState.route)) return;
+  if (!flow || flow.hidden || !['home-access', 'join-home', 'accounts'].includes(identityState.route)) return;
   identityState = hydrateIdentityState(identityState.route);
   renderIdentityFlowUi();
 }
@@ -2384,12 +2384,6 @@ function renderIdentityFlowUi() {
   const mount = document.querySelector<HTMLElement>('#identity-flow-mount');
   if (!mount) return;
   mount.innerHTML = renderIdentityFlow(identityState, identityCompletionVisible, editingExistingHomeBasics);
-  const active = activeHomeSelection();
-  if (manualInvitation && manualInvitation.identity === currentIdentity && manualInvitation.homeId === active.flatId && identityState.route === 'bring-house-together') {
-    const actions = mount.querySelector<HTMLElement>('.identity-actions');
-    actions?.insertAdjacentHTML('beforebegin', `<section class="identity-section identity-manual-invitation" role="status"><h2>Invitation ready to copy</h2><p>The browser could not copy automatically. Select the complete link below and copy it manually.</p><div class="identity-fields"><label>Invitation link<input name="manualInvitationLink" value="${escapeHtml(manualInvitation.link)}" readonly /></label></div></section>`);
-    mount.querySelector<HTMLInputElement>('[name="manualInvitationLink"]')?.addEventListener('focus', event => (event.currentTarget as HTMLInputElement).select());
-  }
   mount.querySelectorAll<HTMLButtonElement>('button[data-identity-route]').forEach(button => {
     button.addEventListener('click', () => openIdentityFlow(button.dataset.identityRoute as IdentityRoute, identityState.route));
   });
@@ -2465,31 +2459,7 @@ async function handleIdentityAction(action: string) {
       message: undefined,
     };
   } else if (action === 'confirm-create-home') identityState = await createHome(identityState, ports);
-  else if (action === 'lookup-invitation') {
-    const value = document.querySelector<HTMLInputElement>('#identity-flow-form [name="invitation"]')?.value || '';
-    identityState = await lookupInvitation(identityState, value, ports);
-  } else if (action === 'confirm-join') {
-    const name = document.querySelector<HTMLInputElement>('#identity-flow-form [name="joinDisplayName"]')?.value || identityState.profile.displayName;
-    identityState = await joinHome(identityState, name, ports);
-    if (identityState.request === 'success') identityState = seedFirstTaskChoices(identityState);
-  } else if (action === 'copy-invitation') {
-    const date = document.querySelector<HTMLInputElement>('#identity-flow-form [name="inviteExpiry"]')?.value;
-    const expiresAt = date ? new Date(`${date}T23:59:59`) : new Date(Date.now() + 7 * 86_400_000);
-    const result = await createInvitation(identityState, { recipient: '', expiresAt }, ports);
-    identityState = result.state;
-    if (result.invitation) {
-      const link = `${location.origin}${location.pathname}?invite=${result.invitation.code}`;
-      try {
-        if (!navigator.clipboard?.writeText) throw new Error('Clipboard access is unavailable.');
-        await navigator.clipboard.writeText(link);
-        manualInvitation = null;
-        identityState = { ...identityState, message: 'Private invitation copied.' };
-      } catch {
-        manualInvitation = { link, identity: currentIdentity, homeId: activeHomeSelection().flatId };
-        identityState = { ...identityState, message: 'Invitation created. Copy the link below.' };
-      }
-    }
-  } else if (action === 'edit-home-basics') {
+  else if (action === 'edit-home-basics') {
     editingExistingHomeBasics = true;
     identityState = hydrateIdentityState('bring-house-together');
   } else if (action === 'save-basics') {

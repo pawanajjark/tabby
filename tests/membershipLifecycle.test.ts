@@ -70,3 +70,15 @@ test('conversation message retries are idempotent across tabs', () => {
   assert.match(routeBlock, /navigator\.locks\.request/);
   assert.match(routeBlock, /reply:\$\{command\.id\}/);
 });
+
+test('acknowledged messages route even when database sync replaced the temporary local id', () => {
+  const flushStart = clientSource.indexOf('async function flushActiveOutbox()');
+  const flushEnd = clientSource.indexOf('\nasync function routeAcknowledgedCommandOnce(', flushStart);
+  assert.notEqual(flushStart, -1);
+  assert.notEqual(flushEnd, -1);
+  const flushBlock = clientSource.slice(flushStart, flushEnd);
+
+  assert.match(flushBlock, /if \(message\) updateMessage/);
+  assert.doesNotMatch(flushBlock, /if \(!message\) continue/);
+  assert.match(flushBlock, /routeAcknowledgedCommandOnce\(command, payload\)/);
+});
