@@ -46,7 +46,7 @@ export function renderIdentityScreen(state: IdentityFeatureState): IdentityScree
     case 'welcome':
       return { ...base, eyebrow: 'WELCOME TO TABBY', body: 'Groceries, meals, bills, notes, and house decisions stay in one calm conversation.', actions: [
         { id: 'create-home', label: 'Create a home', tone: 'primary' },
-        { id: 'join-home', label: 'Join a home', tone: 'secondary' },
+        { id: 'join-home', label: 'Choose an existing home', tone: 'secondary' },
       ] };
     case 'profile':
       return { ...base, body: 'Add the details housemates should recognize. Private conversation content is never part of this profile.', sections: [
@@ -54,16 +54,15 @@ export function renderIdentityScreen(state: IdentityFeatureState): IdentityScree
         { id: 'preferences', heading: 'Household preferences', body: 'Dietary choices and cooking habits help with shared planning.' },
       ], actions: [{ id: 'save-profile', label: 'Continue', tone: 'primary' }] };
     case 'home-access':
-      return { ...base, body: 'Switch to a home already linked to this account, create a new one, or join with an invitation.', sections: [
+      return { ...base, body: 'Choose an existing home or create a new one.', sections: [
         { id: 'homes', rows: state.homes.map(home => ({ title: home.name, detail: `${home.label}, ${home.residenceName}`, status: home.active ? 'Current home' : undefined })) },
       ], actions: [
         { id: 'create-home', label: 'Create a home', tone: 'primary' },
-        { id: 'join-home', label: 'Join with an invitation', tone: 'secondary' },
       ] };
     case 'create-home': {
       const preview = homePreview(state.createHome);
       return { ...base, body: 'Name the place in a way everyone will recognize.', sections: [
-        { id: 'privacy', heading: 'Private by default', body: 'Only invited members can see shared home details. Private conversations stay private.' },
+        { id: 'storage', heading: 'Original household storage', body: 'This home uses the existing residence, flat, and member tables.' },
         ...(preview ? [{ id: 'preview', heading: 'Preview', rows: [{ title: preview.title, detail: `${preview.location}. ${preview.memberLabel}` }] }] : []),
       ], actions: [{ id: 'confirm-create-home', label: 'Create home', tone: 'primary', disabled: !preview }] };
     }
@@ -108,9 +107,8 @@ export function renderIdentityScreen(state: IdentityFeatureState): IdentityScree
     case 'settings':
       return { ...base, sections: [
         { id: 'profile', heading: 'Profile and account', body: 'Edit account details, switch accounts, or sign out.' },
-        { id: 'home', heading: 'Home', body: 'Switch homes and manage shared defaults.' },
+        { id: 'home', heading: 'Home', body: 'Choose your current home.' },
         { id: 'ai', heading: 'AI connection', body: 'Optional. Core household tools work without it.' },
-        { id: 'danger', heading: 'Delete account', body: 'Permanently remove data owned by this account.' },
       ], actions: [] };
     case 'delete-account':
       return { ...base, body: 'This permanently removes data owned by this account. Type DELETE to continue.', sections: [

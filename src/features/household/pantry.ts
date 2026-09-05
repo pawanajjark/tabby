@@ -1,4 +1,4 @@
-import type { PantryItem, PantryItemDetail } from '../../module_bindings/types.ts';
+import type { PantryItem } from '../../module_bindings/types.ts';
 import type { HouseholdAction } from './actions.ts';
 import { escapeHouseholdHtml } from './html.ts';
 
@@ -24,6 +24,15 @@ export interface PantryFilters {
   stockState?: PantryStockState | 'all';
 }
 
+interface PantryItemDetail {
+  pantryItemId: bigint;
+  category: string;
+  location: string;
+  lowStockThreshold: number;
+  useSoon: boolean;
+  updatedAt: { microsSinceUnixEpoch: bigint };
+}
+
 function stockState(quantity: number, threshold: number, useSoon: boolean): PantryStockState {
   if (quantity <= 0) return 'out';
   if (useSoon) return 'use-soon';
@@ -31,7 +40,7 @@ function stockState(quantity: number, threshold: number, useSoon: boolean): Pant
   return 'available';
 }
 
-export function pantryViewItems(items: readonly PantryItem[], details: readonly PantryItemDetail[]): PantryViewItem[] {
+export function pantryViewItems(items: readonly PantryItem[], details: readonly PantryItemDetail[] = []): PantryViewItem[] {
   const detailsByItem = new Map(details.map(detail => [detail.pantryItemId, detail]));
   return items.map(item => {
     const detail = detailsByItem.get(item.id);
@@ -95,22 +104,16 @@ export function renderPantryRoute(
   options: { nowMicros: bigint; online: boolean; mobile?: boolean; filters?: PantryFilters },
 ): string {
   const visible = filterPantry(items, options.filters ?? {});
-  const categories = [...new Set(items.map(item => item.category).filter(Boolean))].sort();
-  const locations = [...new Set(items.map(item => item.location).filter(Boolean))].sort();
   const rows = visible.length
     ? visible.map(item => `<article class="pantry-item stock-${item.stockState}" data-pantry-id="${item.id}">
-        <div><span class="pantry-category">${escapeHouseholdHtml(item.category || 'Uncategorised')}</span><h3>${escapeHouseholdHtml(item.name)}</h3></div>
+        <div><h3>${escapeHouseholdHtml(item.name)}</h3></div>
         <p class="pantry-quantity">${item.quantity} ${escapeHouseholdHtml(item.unit)}</p>
-        <p class="pantry-location">${escapeHouseholdHtml(item.location || 'Location not set')}</p>
-        <p class="pantry-updated">${pantryUpdatedLabel(item.updatedAtMicros, options.nowMicros)}</p>
       </article>`).join('')
     : '<div class="pantry-empty"><h2>No pantry items match</h2><p>Try clearing a filter or add the first real item.</p></div>';
   return `<section class="pantry-route ${options.mobile ? 'pantry-mobile' : 'pantry-desktop'}" data-household-route="pantry">
     <header class="pantry-route-header"><p class="eyebrow">SHARED PANTRY</p><h1>Pantry</h1><input type="search" data-pantry-search placeholder="Search pantry" value="${escapeHouseholdHtml(options.filters?.query ?? '')}" /></header>
     ${options.online ? '' : '<p class="pantry-offline" role="status">Pantry is unavailable for shared changes while offline.</p>'}
     <div class="pantry-filters" data-pantry-filters>
-      <label>Category<select data-pantry-category><option value="">All categories</option>${categories.map(value => `<option value="${escapeHouseholdHtml(value)}">${escapeHouseholdHtml(value)}</option>`).join('')}</select></label>
-      <label>Location<select data-pantry-location><option value="">All locations</option>${locations.map(value => `<option value="${escapeHouseholdHtml(value)}">${escapeHouseholdHtml(value)}</option>`).join('')}</select></label>
       <label>Stock<select data-pantry-stock><option value="all">All stock</option><option value="available">Available</option><option value="low">Low</option><option value="out">Out</option><option value="use-soon">Use soon</option></select></label>
     </div>
     <div class="pantry-grid">${rows}</div>

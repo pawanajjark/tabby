@@ -57,7 +57,7 @@ export async function createHome(state: IdentityFeatureState, ports: IdentityPor
   const next = busy(state);
   try {
     await ports.createHome(state.createHome);
-    return succeeded({ ...next, route: 'bring-house-together' }, 'Home created.');
+    return succeeded({ ...next, route: 'first-task' }, 'Home created.');
   } catch (cause) {
     return failed(next, cause);
   }

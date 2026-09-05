@@ -62,9 +62,7 @@ function routeFields(state: IdentityFeatureState): string {
       return `<nav class="identity-settings-links" aria-label="Settings sections">
         <button type="button" data-identity-route="profile">Profile</button>
         <button type="button" data-identity-route="home-access">Homes and accounts</button>
-        <button type="button" data-identity-action="edit-home-basics">Home basics</button>
         <button type="button" data-identity-route="ai-connection">AI connection</button>
-        <button type="button" class="danger-link" data-identity-route="delete-account">Delete account</button>
       </nav>`;
     case 'delete-account':
       return `<div class="identity-fields"><label>Type DELETE<input name="deletionInput" autocomplete="off" value="${fieldValue(state.deletionInput)}" /></label></div>`;

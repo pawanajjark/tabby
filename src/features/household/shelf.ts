@@ -16,7 +16,6 @@ export interface HomeShelfInput {
 
 export function renderHomeShelfSummary(input: HomeShelfInput): string {
   const pantry = pantryShelfSummary(input.pantry);
-  const activeReminders = input.reminders.filter(reminder => reminder.state !== 'completed').length;
   const empty = input.pantry.length + input.notes.length + input.agreements.length + input.reminders.length === 0;
   return `<aside class="home-shelf-summary ${input.mobile ? 'home-shelf-mobile' : 'home-shelf-desktop'}" data-home-shelf-summary>
     <header><p class="eyebrow">HOME SHELF</p><h2>${escapeHouseholdHtml(input.homeName || 'Your home')}</h2>${input.online ? '' : '<p class="shelf-unavailable">Showing the last synchronized shelf. Shared actions are unavailable.</p>'}</header>
@@ -25,7 +24,6 @@ export function renderHomeShelfSummary(input: HomeShelfInput): string {
       <section class="shelf-summary-card pantry-summary"><strong>${pantry.total}</strong><span>Pantry · ${pantry.low} low · ${pantry.useSoon} use soon</span></section>
       <section class="shelf-summary-card notes-summary"><strong>${input.notes.length}</strong><span>Home notes</span></section>
       <section class="shelf-summary-card agreements-summary"><strong>${input.agreements.length}</strong><span>Agreements</span></section>
-      <section class="shelf-summary-card reminders-summary"><strong>${activeReminders}</strong><span>Reminders</span></section>
     </div>`}
   </aside>`;
 }

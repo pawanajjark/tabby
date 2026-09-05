@@ -1,6 +1,12 @@
-import type { Reminder } from '../../module_bindings/types.ts';
 import type { HouseholdAction } from './actions.ts';
 import { escapeHouseholdHtml } from './html.ts';
+
+export interface Reminder {
+  id: bigint;
+  title: string;
+  dueAt: { microsSinceUnixEpoch: bigint };
+  completed: boolean;
+}
 
 export type ReminderState = 'upcoming' | 'due' | 'completed';
 

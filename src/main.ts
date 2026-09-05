@@ -259,15 +259,6 @@ app.innerHTML = `
         <div id="rules-list" class="context-list"></div>
       </section>
       <div id="shelf-summary-mount" class="shelf-summary-mount"></div>
-      <section class="context-section reminder-compose">
-        <div class="section-heading"><h3>REMINDERS</h3></div>
-        <form id="quick-reminder-form" class="quick-reminder-form">
-          <input id="quick-reminder-title" placeholder="Add a reminder" autocomplete="off" required />
-          <input id="quick-reminder-due" type="datetime-local" required />
-          <button type="submit" class="quick-add-btn" data-shared-action>Add</button>
-        </form>
-        <div id="reminder-shelf-mount"></div>
-      </section>
       <div id="bill-review-mount" class="bill-review-mount"></div>
     </aside>
     <button type="button" class="drawer-scrim" id="drawer-scrim" aria-label="Close Home shelf" hidden></button>
@@ -288,7 +279,7 @@ app.innerHTML = `
       </div>
       <div class="welcome-home-actions" aria-label="Set up a home">
         <button type="button" class="primary-button welcome-home-action create-home-action">Create a home</button>
-        <button type="button" class="secondary-button welcome-home-action join-home-action">Join a home</button>
+        <button type="button" class="secondary-button welcome-home-action join-home-action">Choose an existing home</button>
       </div>
       <p class="returning-user-copy">Returning to Tabby? Sign in below.</p>
       <div class="onboarding-section-heading"><span>PRIVATE SETUP</span><strong>Your profile</strong></div>
@@ -389,12 +380,6 @@ app.innerHTML = `
           <label>OpenAI API key<input id="ai-key" type="password" autocomplete="off" placeholder="Enter a key to connect OpenAI" /></label>
           <label>Model<input id="ai-model" autocomplete="off" placeholder="gpt-5.6-sol" /></label>
           <button type="button" id="disconnect-ai" class="secondary-button danger-button" hidden>Disconnect AI</button>
-        </section>
-        <section class="settings-card danger-zone">
-          <p class="conversation-picker-label">DATA AND PRIVACY · DANGER ZONE</p>
-          <h3>Delete your Tabby data</h3>
-          <p>This permanently deletes pantry items, expenses, memories, conversations, and local household settings.</p>
-          <button type="button" id="reset-tabby-db" class="secondary-button danger-button">Delete your Tabby data</button>
         </section>
       </div>
       <div class="dialog-actions">
@@ -1108,7 +1093,7 @@ function saveLocalRules(rules: LocalFlatRule[]) {
 }
 
 function flatRulesData(): LocalFlatRule[] {
-  if (connection?.db?.myFlatRules) {
+  if (connection?.db?.flatRule) {
     try {
       const dbRows = householdGateway.flatRules()
         .map(r => ({
@@ -1621,34 +1606,11 @@ async function recordCurrentBill() {
   renderConversation();
   if (currentBillPhase.step !== 'creating-review') return;
   try {
-    const existing = new Set(householdGateway.billReviews().map(review => review.id));
-    await householdGateway.executeHouseholdAction(createBillReviewAction(currentBillDraft));
-    const review = await waitForSubscribed(
-      () => householdGateway.billReviews().find(candidate => !existing.has(candidate.id) && candidate.title === currentBillDraft!.title),
-      'The bill review was sent but its acknowledgement did not arrive.',
-    );
-    currentBillPhase = billReviewAcknowledged(review.id);
+    const amountPaise = currentBillDraft.lines.reduce((total, line) => total + line.amountPaise, 0n);
+    await householdGateway.recordExpense({ title: currentBillDraft.title, amountPaise });
+    currentBillPhase = billRecordingAcknowledged(0n);
     renderConversation();
-    for (const action of billLineActions(currentBillDraft, review.id)) await householdGateway.executeHouseholdAction(action);
-    const subscribedLines = await waitForSubscribed(() => {
-      const rows = householdGateway.billLines().filter(line => line.billReviewId === review.id);
-      return rows.length === currentBillDraft!.lines.length ? rows : undefined;
-    }, 'The bill lines were sent but their acknowledgements did not arrive.');
-    currentBillPhase = billLinesAcknowledged(review.id);
-    renderConversation();
-    const lineIds = new Map(subscribedLines.map(line => [line.lineKey, line.id]));
-    const allocations = billAllocationActions(currentBillDraft, review.id, lineIds);
-    for (const action of allocations) await householdGateway.executeHouseholdAction(action);
-    await waitForSubscribed(() => {
-      const rows = householdGateway.billLineAllocations().filter(allocation => allocation.billReviewId === review.id);
-      return rows.length === allocations.length ? rows : undefined;
-    }, 'The bill allocations were sent but their acknowledgements did not arrive.');
-    currentBillPhase = billAllocationsAcknowledged(review.id);
-    renderConversation();
-    await householdGateway.executeHouseholdAction(recordReviewedBillAction(review.id));
-    currentBillPhase = billRecordingAcknowledged(review.id);
-    renderConversation();
-    showToast('The itemized bill was acknowledged and recorded.');
+    showToast('The bill was recorded using the original equal-split backend.');
   } catch (cause) {
     currentBillPhase = billRecordRejected(currentBillPhase, cause instanceof Error ? cause.message : String(cause));
     renderConversation();
@@ -1837,7 +1799,7 @@ function syncAiStatus() {
   const isBackendVerified = Boolean(status?.verified);
   const modelName = status?.model || AIProvider.getModelName() || (import.meta.env.VITE_OPENAI_MODEL as string | undefined)?.trim() || 'gpt-5.6-sol';
 
-  AIProvider.setConfigured(isBackendConfigured, modelName);
+  if (currentIdentity) AIProvider.setConfigured(isBackendConfigured, modelName);
 
   const isVerified = isBackendVerified;
   const isConfigured = isBackendConfigured;
@@ -1892,47 +1854,35 @@ function attachDatabaseListeners(conn: DbConnection) {
     renderAll();
   });
 
-  conn.db.myResidences.onInsert(syncResidences);
-  conn.db.myResidences.onUpdate(syncResidences);
-  conn.db.myHomes.onInsert(syncResidences);
-  conn.db.myHomes.onUpdate(syncResidences);
+  conn.db.residence.onInsert(syncResidences);
+  conn.db.residence.onUpdate(syncResidences);
+  conn.db.flat.onInsert(syncResidences);
+  conn.db.flat.onUpdate(syncResidences);
   const syncActiveHome = ifCurrent(() => {
     renderAll();
     ensureConversation();
   });
-  conn.db.myHomeMemberships.onInsert(syncActiveHome);
-  conn.db.myHomeMemberships.onUpdate(syncActiveHome);
-  conn.db.myHomeMemberships.onDelete(syncActiveHome);
-  conn.db.myFlatRules.onInsert(ifCurrent(renderAll));
-  conn.db.myFlatRules.onUpdate(ifCurrent(renderAll));
-  conn.db.myFlatRules.onDelete(ifCurrent(renderAll));
-  conn.db.myMembers.onInsert(ifCurrent(() => {
+  conn.db.member.onInsert(syncActiveHome);
+  conn.db.member.onUpdate(syncActiveHome);
+  conn.db.member.onDelete(syncActiveHome);
+  conn.db.flatRule.onInsert(ifCurrent(renderAll));
+  conn.db.flatRule.onUpdate(ifCurrent(renderAll));
+  conn.db.flatRule.onDelete(ifCurrent(renderAll));
+  conn.db.member.onInsert(ifCurrent(() => {
     renderAll();
     if (isPeopleSynchronized && isDatabaseSynchronized) ensureConversation();
   }));
-  conn.db.myMembers.onUpdate(ifCurrent(renderAll));
-  conn.db.myMembers.onDelete(ifCurrent(renderAll));
-  conn.db.myPantryItems.onInsert(ifCurrent(renderAll));
-  conn.db.myPantryItems.onUpdate(ifCurrent(renderAll));
-  conn.db.myPantryItems.onDelete(ifCurrent(renderAll));
-  conn.db.myPantryItemDetails.onInsert(ifCurrent(renderAll));
-  conn.db.myPantryItemDetails.onUpdate(ifCurrent(renderAll));
-  conn.db.myPantryItemDetails.onDelete(ifCurrent(renderAll));
-  conn.db.mySharedMemories.onInsert(ifCurrent(renderAll));
-  conn.db.mySharedMemories.onUpdate(ifCurrent(renderAll));
-  conn.db.myExpenses.onInsert(ifCurrent(renderAll));
-  conn.db.myExpenses.onUpdate(ifCurrent(renderAll));
-  conn.db.myExpenseSplits.onInsert(ifCurrent(renderAll));
-  conn.db.myExpenseSplits.onUpdate(ifCurrent(renderAll));
-  conn.db.myReminders.onInsert(ifCurrent(renderAll));
-  conn.db.myReminders.onUpdate(ifCurrent(renderAll));
-  conn.db.myReminders.onDelete(ifCurrent(renderAll));
-  conn.db.myBillReviews.onInsert(ifCurrent(renderAll));
-  conn.db.myBillReviews.onUpdate(ifCurrent(renderAll));
-  conn.db.myBillLines.onInsert(ifCurrent(renderAll));
-  conn.db.myBillLines.onUpdate(ifCurrent(renderAll));
-  conn.db.myBillLineAllocations.onInsert(ifCurrent(renderAll));
-  conn.db.myBillLineAllocations.onUpdate(ifCurrent(renderAll));
+  conn.db.member.onUpdate(ifCurrent(renderAll));
+  conn.db.member.onDelete(ifCurrent(renderAll));
+  conn.db.pantryItem.onInsert(ifCurrent(renderAll));
+  conn.db.pantryItem.onUpdate(ifCurrent(renderAll));
+  conn.db.pantryItem.onDelete(ifCurrent(renderAll));
+  conn.db.sharedMemory.onInsert(ifCurrent(renderAll));
+  conn.db.sharedMemory.onUpdate(ifCurrent(renderAll));
+  conn.db.expense.onInsert(ifCurrent(renderAll));
+  conn.db.expense.onUpdate(ifCurrent(renderAll));
+  conn.db.expenseSplit.onInsert(ifCurrent(renderAll));
+  conn.db.expenseSplit.onUpdate(ifCurrent(renderAll));
   conn.db.myAiStatus.onInsert(ifCurrent(syncAiStatus));
   conn.db.myAiStatus.onUpdate(ifCurrent(syncAiStatus));
   conn.db.myAiStatus.onDelete(ifCurrent(syncAiStatus));
@@ -2021,7 +1971,7 @@ function connectToDatabase() {
 
           isPeopleSynchronized = true;
           const user = AuthManager.getCurrentUser();
-          const isJoined = [...ctx.db.myMembers.iter()]
+          const isJoined = [...ctx.db.member.iter()]
             .some(member => member.identity.toHexString() === currentIdentity);
           if (isJoined && user && user.name) {
             try {
@@ -2129,9 +2079,6 @@ function hydrateIdentityState(route: IdentityRoute): IdentityFeatureState {
     cookingHabits: [],
     customSplitExclusions: [],
   };
-  const homeSettings = isDatabaseSynchronized && active.flatId
-    ? [...connection.db.myHomeSettings.iter()].find(row => row.flatId.toString() === active.flatId)
-    : undefined;
   return {
     ...identityState,
     route,
@@ -2157,12 +2104,7 @@ function hydrateIdentityState(route: IdentityRoute): IdentityFeatureState {
       detail: account.phone || account.email || 'Connected account',
       active: account.identity === currentIdentity,
     })),
-    basics: homeSettings ? {
-      quietHoursStart: homeSettings.quietHoursStart,
-      quietHoursEnd: homeSettings.quietHoursEnd,
-      defaultBillingSplit: homeSettings.defaultBillingSplit,
-      invitesEnabled: homeSettings.invitesEnabled,
-    } : identityState.basics,
+    basics: identityState.basics,
     firstTaskItems: route === 'first-task' && identityState.firstTaskItems.length === 0
       ? FIRST_TASK_STARTERS.map(item => ({ ...item }))
       : identityState.firstTaskItems,
@@ -2431,11 +2373,11 @@ async function handleIdentityAction(action: string) {
     requestedHomePath = 'create';
     identityState = { ...identityState, route: identityState.route === 'welcome' ? 'profile' : 'create-home', request: 'idle' };
   } else if (action === 'join-home') {
-    requestedHomePath = 'join';
-    identityState = { ...identityState, route: identityState.route === 'welcome' ? 'profile' : 'join-home', request: 'idle' };
+    requestedHomePath = null;
+    identityState = { ...identityState, route: identityState.route === 'welcome' ? 'profile' : 'home-access', request: 'idle' };
   } else if (action === 'save-profile') {
     identityState = await saveProfile(identityState, ports);
-    if (identityState.request === 'success') identityState = { ...identityState, route: requestedHomePath === 'create' ? 'create-home' : requestedHomePath === 'join' ? 'join-home' : 'home-access' };
+    if (identityState.request === 'success') identityState = { ...identityState, route: requestedHomePath === 'create' ? 'create-home' : 'home-access' };
   } else if (action === 'confirm-create-home') identityState = await createHome(identityState, ports);
   else if (action === 'lookup-invitation') {
     const value = document.querySelector<HTMLInputElement>('#identity-flow-form [name="invitation"]')?.value || '';

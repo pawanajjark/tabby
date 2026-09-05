@@ -37,66 +37,163 @@ import {
 import AddPantryItemReducer from "./add_pantry_item_reducer";
 import AppendConversationMessageReducer from "./append_conversation_message_reducer";
 import ClearAllDataReducer from "./clear_all_data_reducer";
-import CompleteReminderReducer from "./complete_reminder_reducer";
 import CreateAndJoinFlatReducer from "./create_and_join_flat_reducer";
-import CreateBillReviewReducer from "./create_bill_review_reducer";
 import CreateConversationReducer from "./create_conversation_reducer";
 import CreateHomeAndJoinReducer from "./create_home_and_join_reducer";
-import CreateHomeInvitationReducer from "./create_home_invitation_reducer";
-import CreateReminderReducer from "./create_reminder_reducer";
 import CreateResidenceReducer from "./create_residence_reducer";
-import DeleteBillLineReducer from "./delete_bill_line_reducer";
-import DeleteBillLineAllocationReducer from "./delete_bill_line_allocation_reducer";
 import DeleteFlatRuleReducer from "./delete_flat_rule_reducer";
-import DeleteMyAccountReducer from "./delete_my_account_reducer";
-import DeletePantryItemReducer from "./delete_pantry_item_reducer";
 import JoinFlatReducer from "./join_flat_reducer";
-import JoinHomeWithInviteReducer from "./join_home_with_invite_reducer";
 import RecordExpenseReducer from "./record_expense_reducer";
-import RecordReviewedBillReducer from "./record_reviewed_bill_reducer";
-import RevokeHomeInvitationReducer from "./revoke_home_invitation_reducer";
 import SetAiConfigReducer from "./set_ai_config_reducer";
 import SetDisplayNameReducer from "./set_display_name_reducer";
-import SwitchHomeReducer from "./switch_home_reducer";
 import UpdateResidenceFlatReducer from "./update_residence_flat_reducer";
-import UpsertBillAllocationReducer from "./upsert_bill_allocation_reducer";
-import UpsertBillLineReducer from "./upsert_bill_line_reducer";
-import UpsertBillLineAllocationReducer from "./upsert_bill_line_allocation_reducer";
 import UpsertFlatRuleReducer from "./upsert_flat_rule_reducer";
-import UpsertHomeSettingsReducer from "./upsert_home_settings_reducer";
-import UpsertPantryItemReducer from "./upsert_pantry_item_reducer";
 import UpsertSharedMemoryReducer from "./upsert_shared_memory_reducer";
 
 // Import all procedure arg schemas
-import * as LookupHomeInvitationProcedure from "./lookup_home_invitation_procedure";
 import * as RunAiProcedure from "./run_ai_procedure";
 
 // Import all table schema definitions
+import ExpenseRow from "./expense_table";
+import ExpenseSplitRow from "./expense_split_table";
+import FlatRow from "./flat_table";
+import FlatRuleRow from "./flat_rule_table";
+import MemberRow from "./member_table";
 import MyAiStatusRow from "./my_ai_status_table";
-import MyBillAllocationsRow from "./my_bill_allocations_table";
-import MyBillLineAllocationsRow from "./my_bill_line_allocations_table";
-import MyBillLinesRow from "./my_bill_lines_table";
-import MyBillReviewsRow from "./my_bill_reviews_table";
 import MyConversationMessagesRow from "./my_conversation_messages_table";
 import MyConversationsRow from "./my_conversations_table";
-import MyExpenseSplitsRow from "./my_expense_splits_table";
-import MyExpensesRow from "./my_expenses_table";
-import MyFlatRulesRow from "./my_flat_rules_table";
-import MyHomeMembershipsRow from "./my_home_memberships_table";
-import MyHomeSettingsRow from "./my_home_settings_table";
-import MyHomesRow from "./my_homes_table";
-import MyMembersRow from "./my_members_table";
-import MyPantryItemDetailsRow from "./my_pantry_item_details_table";
-import MyPantryItemsRow from "./my_pantry_items_table";
-import MyReminderDeliveriesRow from "./my_reminder_deliveries_table";
-import MyRemindersRow from "./my_reminders_table";
-import MyResidencesRow from "./my_residences_table";
-import MySharedMemoriesRow from "./my_shared_memories_table";
+import PantryItemRow from "./pantry_item_table";
+import ResidenceRow from "./residence_table";
+import SharedMemoryRow from "./shared_memory_table";
 
 /** Type-only namespace exports for generated type groups. */
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  expense: __table({
+    name: 'expense',
+    indexes: [
+      { accessor: 'flat_id', name: 'expense_flat_id_idx_btree', algorithm: 'btree', columns: [
+        'flatId',
+      ] },
+      { accessor: 'id', name: 'expense_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'expense_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, ExpenseRow),
+  expenseSplit: __table({
+    name: 'expense_split',
+    indexes: [
+      { accessor: 'expense_id', name: 'expense_split_expense_id_idx_btree', algorithm: 'btree', columns: [
+        'expenseId',
+      ] },
+      { accessor: 'id', name: 'expense_split_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'member_identity', name: 'expense_split_member_identity_idx_btree', algorithm: 'btree', columns: [
+        'memberIdentity',
+      ] },
+    ],
+    constraints: [
+      { name: 'expense_split_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, ExpenseSplitRow),
+  flat: __table({
+    name: 'flat',
+    indexes: [
+      { accessor: 'id', name: 'flat_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'residence_id', name: 'flat_residence_id_idx_btree', algorithm: 'btree', columns: [
+        'residenceId',
+      ] },
+    ],
+    constraints: [
+      { name: 'flat_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, FlatRow),
+  flatRule: __table({
+    name: 'flat_rule',
+    indexes: [
+      { accessor: 'flat_id', name: 'flat_rule_flat_id_idx_btree', algorithm: 'btree', columns: [
+        'flatId',
+      ] },
+      { accessor: 'id', name: 'flat_rule_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'rule_type', name: 'flat_rule_rule_type_idx_btree', algorithm: 'btree', columns: [
+        'ruleType',
+      ] },
+    ],
+    constraints: [
+      { name: 'flat_rule_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, FlatRuleRow),
+  member: __table({
+    name: 'member',
+    indexes: [
+      { accessor: 'flat_id', name: 'member_flat_id_idx_btree', algorithm: 'btree', columns: [
+        'flatId',
+      ] },
+      { accessor: 'identity', name: 'member_identity_idx_btree', algorithm: 'btree', columns: [
+        'identity',
+      ] },
+    ],
+    constraints: [
+      { name: 'member_identity_key', constraint: 'unique', columns: ['identity'] },
+    ],
+  }, MemberRow),
+  pantryItem: __table({
+    name: 'pantry_item',
+    indexes: [
+      { accessor: 'flat_id', name: 'pantry_item_flat_id_idx_btree', algorithm: 'btree', columns: [
+        'flatId',
+      ] },
+      { accessor: 'id', name: 'pantry_item_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'name', name: 'pantry_item_name_idx_btree', algorithm: 'btree', columns: [
+        'name',
+      ] },
+    ],
+    constraints: [
+      { name: 'pantry_item_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, PantryItemRow),
+  residence: __table({
+    name: 'residence',
+    indexes: [
+      { accessor: 'id', name: 'residence_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'residence_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, ResidenceRow),
+  sharedMemory: __table({
+    name: 'shared_memory',
+    indexes: [
+      { accessor: 'category', name: 'shared_memory_category_idx_btree', algorithm: 'btree', columns: [
+        'category',
+      ] },
+      { accessor: 'flat_id', name: 'shared_memory_flat_id_idx_btree', algorithm: 'btree', columns: [
+        'flatId',
+      ] },
+      { accessor: 'id', name: 'shared_memory_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'subject_identity', name: 'shared_memory_subject_identity_idx_btree', algorithm: 'btree', columns: [
+        'subjectIdentity',
+      ] },
+    ],
+    constraints: [
+      { name: 'shared_memory_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, SharedMemoryRow),
   myAiStatus: __table({
     name: 'my_ai_status',
     indexes: [
@@ -104,34 +201,6 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyAiStatusRow),
-  myBillAllocations: __table({
-    name: 'my_bill_allocations',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MyBillAllocationsRow),
-  myBillLineAllocations: __table({
-    name: 'my_bill_line_allocations',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MyBillLineAllocationsRow),
-  myBillLines: __table({
-    name: 'my_bill_lines',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MyBillLinesRow),
-  myBillReviews: __table({
-    name: 'my_bill_reviews',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MyBillReviewsRow),
   myConversationMessages: __table({
     name: 'my_conversation_messages',
     indexes: [
@@ -146,97 +215,6 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyConversationsRow),
-  myExpenseSplits: __table({
-    name: 'my_expense_splits',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MyExpenseSplitsRow),
-  myExpenses: __table({
-    name: 'my_expenses',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MyExpensesRow),
-  myFlatRules: __table({
-    name: 'my_flat_rules',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MyFlatRulesRow),
-  myHomeMemberships: __table({
-    name: 'my_home_memberships',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MyHomeMembershipsRow),
-  myHomeSettings: __table({
-    name: 'my_home_settings',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MyHomeSettingsRow),
-  myHomes: __table({
-    name: 'my_homes',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MyHomesRow),
-  myMembers: __table({
-    name: 'my_members',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MyMembersRow),
-  myPantryItemDetails: __table({
-    name: 'my_pantry_item_details',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MyPantryItemDetailsRow),
-  myPantryItems: __table({
-    name: 'my_pantry_items',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MyPantryItemsRow),
-  myReminderDeliveries: __table({
-    name: 'my_reminder_deliveries',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MyReminderDeliveriesRow),
-  myReminders: __table({
-    name: 'my_reminders',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MyRemindersRow),
-  myResidences: __table({
-    name: 'my_residences',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MyResidencesRow),
-  mySharedMemories: __table({
-    name: 'my_shared_memories',
-    indexes: [
-    ],
-    constraints: [
-    ],
-  }, MySharedMemoriesRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
@@ -244,40 +222,22 @@ const reducersSchema = __reducers(
   __reducerSchema("add_pantry_item", AddPantryItemReducer),
   __reducerSchema("append_conversation_message", AppendConversationMessageReducer),
   __reducerSchema("clear_all_data", ClearAllDataReducer),
-  __reducerSchema("complete_reminder", CompleteReminderReducer),
   __reducerSchema("create_and_join_flat", CreateAndJoinFlatReducer),
-  __reducerSchema("create_bill_review", CreateBillReviewReducer),
   __reducerSchema("create_conversation", CreateConversationReducer),
   __reducerSchema("create_home_and_join", CreateHomeAndJoinReducer),
-  __reducerSchema("create_home_invitation", CreateHomeInvitationReducer),
-  __reducerSchema("create_reminder", CreateReminderReducer),
   __reducerSchema("create_residence", CreateResidenceReducer),
-  __reducerSchema("delete_bill_line", DeleteBillLineReducer),
-  __reducerSchema("delete_bill_line_allocation", DeleteBillLineAllocationReducer),
   __reducerSchema("delete_flat_rule", DeleteFlatRuleReducer),
-  __reducerSchema("delete_my_account", DeleteMyAccountReducer),
-  __reducerSchema("delete_pantry_item", DeletePantryItemReducer),
   __reducerSchema("join_flat", JoinFlatReducer),
-  __reducerSchema("join_home_with_invite", JoinHomeWithInviteReducer),
   __reducerSchema("record_expense", RecordExpenseReducer),
-  __reducerSchema("record_reviewed_bill", RecordReviewedBillReducer),
-  __reducerSchema("revoke_home_invitation", RevokeHomeInvitationReducer),
   __reducerSchema("set_ai_config", SetAiConfigReducer),
   __reducerSchema("set_display_name", SetDisplayNameReducer),
-  __reducerSchema("switch_home", SwitchHomeReducer),
   __reducerSchema("update_residence_flat", UpdateResidenceFlatReducer),
-  __reducerSchema("upsert_bill_allocation", UpsertBillAllocationReducer),
-  __reducerSchema("upsert_bill_line", UpsertBillLineReducer),
-  __reducerSchema("upsert_bill_line_allocation", UpsertBillLineAllocationReducer),
   __reducerSchema("upsert_flat_rule", UpsertFlatRuleReducer),
-  __reducerSchema("upsert_home_settings", UpsertHomeSettingsReducer),
-  __reducerSchema("upsert_pantry_item", UpsertPantryItemReducer),
   __reducerSchema("upsert_shared_memory", UpsertSharedMemoryReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
 const proceduresSchema = __procedures(
-  __procedureSchema("lookup_home_invitation", LookupHomeInvitationProcedure.params, LookupHomeInvitationProcedure.returnType),
   __procedureSchema("run_ai", RunAiProcedure.params, RunAiProcedure.returnType),
 );
 
@@ -285,44 +245,10 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
   tables: typeof tablesSchema.schemaType.tables & {
     /** @deprecated Use `myAiStatus` instead. This alias will be removed in the next major version. */
     readonly "my_ai_status": Omit<typeof tablesSchema.schemaType.tables["myAiStatus"], "accessorName"> & { readonly accessorName: "my_ai_status" };
-    /** @deprecated Use `myBillAllocations` instead. This alias will be removed in the next major version. */
-    readonly "my_bill_allocations": Omit<typeof tablesSchema.schemaType.tables["myBillAllocations"], "accessorName"> & { readonly accessorName: "my_bill_allocations" };
-    /** @deprecated Use `myBillLineAllocations` instead. This alias will be removed in the next major version. */
-    readonly "my_bill_line_allocations": Omit<typeof tablesSchema.schemaType.tables["myBillLineAllocations"], "accessorName"> & { readonly accessorName: "my_bill_line_allocations" };
-    /** @deprecated Use `myBillLines` instead. This alias will be removed in the next major version. */
-    readonly "my_bill_lines": Omit<typeof tablesSchema.schemaType.tables["myBillLines"], "accessorName"> & { readonly accessorName: "my_bill_lines" };
-    /** @deprecated Use `myBillReviews` instead. This alias will be removed in the next major version. */
-    readonly "my_bill_reviews": Omit<typeof tablesSchema.schemaType.tables["myBillReviews"], "accessorName"> & { readonly accessorName: "my_bill_reviews" };
     /** @deprecated Use `myConversationMessages` instead. This alias will be removed in the next major version. */
     readonly "my_conversation_messages": Omit<typeof tablesSchema.schemaType.tables["myConversationMessages"], "accessorName"> & { readonly accessorName: "my_conversation_messages" };
     /** @deprecated Use `myConversations` instead. This alias will be removed in the next major version. */
     readonly "my_conversations": Omit<typeof tablesSchema.schemaType.tables["myConversations"], "accessorName"> & { readonly accessorName: "my_conversations" };
-    /** @deprecated Use `myExpenseSplits` instead. This alias will be removed in the next major version. */
-    readonly "my_expense_splits": Omit<typeof tablesSchema.schemaType.tables["myExpenseSplits"], "accessorName"> & { readonly accessorName: "my_expense_splits" };
-    /** @deprecated Use `myExpenses` instead. This alias will be removed in the next major version. */
-    readonly "my_expenses": Omit<typeof tablesSchema.schemaType.tables["myExpenses"], "accessorName"> & { readonly accessorName: "my_expenses" };
-    /** @deprecated Use `myFlatRules` instead. This alias will be removed in the next major version. */
-    readonly "my_flat_rules": Omit<typeof tablesSchema.schemaType.tables["myFlatRules"], "accessorName"> & { readonly accessorName: "my_flat_rules" };
-    /** @deprecated Use `myHomeMemberships` instead. This alias will be removed in the next major version. */
-    readonly "my_home_memberships": Omit<typeof tablesSchema.schemaType.tables["myHomeMemberships"], "accessorName"> & { readonly accessorName: "my_home_memberships" };
-    /** @deprecated Use `myHomeSettings` instead. This alias will be removed in the next major version. */
-    readonly "my_home_settings": Omit<typeof tablesSchema.schemaType.tables["myHomeSettings"], "accessorName"> & { readonly accessorName: "my_home_settings" };
-    /** @deprecated Use `myHomes` instead. This alias will be removed in the next major version. */
-    readonly "my_homes": Omit<typeof tablesSchema.schemaType.tables["myHomes"], "accessorName"> & { readonly accessorName: "my_homes" };
-    /** @deprecated Use `myMembers` instead. This alias will be removed in the next major version. */
-    readonly "my_members": Omit<typeof tablesSchema.schemaType.tables["myMembers"], "accessorName"> & { readonly accessorName: "my_members" };
-    /** @deprecated Use `myPantryItemDetails` instead. This alias will be removed in the next major version. */
-    readonly "my_pantry_item_details": Omit<typeof tablesSchema.schemaType.tables["myPantryItemDetails"], "accessorName"> & { readonly accessorName: "my_pantry_item_details" };
-    /** @deprecated Use `myPantryItems` instead. This alias will be removed in the next major version. */
-    readonly "my_pantry_items": Omit<typeof tablesSchema.schemaType.tables["myPantryItems"], "accessorName"> & { readonly accessorName: "my_pantry_items" };
-    /** @deprecated Use `myReminderDeliveries` instead. This alias will be removed in the next major version. */
-    readonly "my_reminder_deliveries": Omit<typeof tablesSchema.schemaType.tables["myReminderDeliveries"], "accessorName"> & { readonly accessorName: "my_reminder_deliveries" };
-    /** @deprecated Use `myReminders` instead. This alias will be removed in the next major version. */
-    readonly "my_reminders": Omit<typeof tablesSchema.schemaType.tables["myReminders"], "accessorName"> & { readonly accessorName: "my_reminders" };
-    /** @deprecated Use `myResidences` instead. This alias will be removed in the next major version. */
-    readonly "my_residences": Omit<typeof tablesSchema.schemaType.tables["myResidences"], "accessorName"> & { readonly accessorName: "my_residences" };
-    /** @deprecated Use `mySharedMemories` instead. This alias will be removed in the next major version. */
-    readonly "my_shared_memories": Omit<typeof tablesSchema.schemaType.tables["mySharedMemories"], "accessorName"> & { readonly accessorName: "my_shared_memories" };
   };
 };
 
@@ -342,25 +268,8 @@ const REMOTE_MODULE = {
 
 const tableAccessorAliases = {
   "my_ai_status": "myAiStatus",
-  "my_bill_allocations": "myBillAllocations",
-  "my_bill_line_allocations": "myBillLineAllocations",
-  "my_bill_lines": "myBillLines",
-  "my_bill_reviews": "myBillReviews",
   "my_conversation_messages": "myConversationMessages",
   "my_conversations": "myConversations",
-  "my_expense_splits": "myExpenseSplits",
-  "my_expenses": "myExpenses",
-  "my_flat_rules": "myFlatRules",
-  "my_home_memberships": "myHomeMemberships",
-  "my_home_settings": "myHomeSettings",
-  "my_homes": "myHomes",
-  "my_members": "myMembers",
-  "my_pantry_item_details": "myPantryItemDetails",
-  "my_pantry_items": "myPantryItems",
-  "my_reminder_deliveries": "myReminderDeliveries",
-  "my_reminders": "myReminders",
-  "my_residences": "myResidences",
-  "my_shared_memories": "mySharedMemories",
 } as const;
 
 function __withTableAccessorAliases<T extends object>(target: T, freeze = false): T {
@@ -378,93 +287,24 @@ function __withTableAccessorAliases<T extends object>(target: T, freeze = false)
   }
   return freeze ? Object.freeze(out) : out;
 }
-
 type __DbViewBase = __DbConnectionImpl<typeof REMOTE_MODULE>["db"];
 export type DbView = __DbViewBase & {
   /** @deprecated Use `myAiStatus` instead. This alias will be removed in the next major version. */
   readonly "my_ai_status": __DbViewBase["myAiStatus"];
-  /** @deprecated Use `myBillAllocations` instead. This alias will be removed in the next major version. */
-  readonly "my_bill_allocations": __DbViewBase["myBillAllocations"];
-  /** @deprecated Use `myBillLineAllocations` instead. This alias will be removed in the next major version. */
-  readonly "my_bill_line_allocations": __DbViewBase["myBillLineAllocations"];
-  /** @deprecated Use `myBillLines` instead. This alias will be removed in the next major version. */
-  readonly "my_bill_lines": __DbViewBase["myBillLines"];
-  /** @deprecated Use `myBillReviews` instead. This alias will be removed in the next major version. */
-  readonly "my_bill_reviews": __DbViewBase["myBillReviews"];
   /** @deprecated Use `myConversationMessages` instead. This alias will be removed in the next major version. */
   readonly "my_conversation_messages": __DbViewBase["myConversationMessages"];
   /** @deprecated Use `myConversations` instead. This alias will be removed in the next major version. */
   readonly "my_conversations": __DbViewBase["myConversations"];
-  /** @deprecated Use `myExpenseSplits` instead. This alias will be removed in the next major version. */
-  readonly "my_expense_splits": __DbViewBase["myExpenseSplits"];
-  /** @deprecated Use `myExpenses` instead. This alias will be removed in the next major version. */
-  readonly "my_expenses": __DbViewBase["myExpenses"];
-  /** @deprecated Use `myFlatRules` instead. This alias will be removed in the next major version. */
-  readonly "my_flat_rules": __DbViewBase["myFlatRules"];
-  /** @deprecated Use `myHomeMemberships` instead. This alias will be removed in the next major version. */
-  readonly "my_home_memberships": __DbViewBase["myHomeMemberships"];
-  /** @deprecated Use `myHomeSettings` instead. This alias will be removed in the next major version. */
-  readonly "my_home_settings": __DbViewBase["myHomeSettings"];
-  /** @deprecated Use `myHomes` instead. This alias will be removed in the next major version. */
-  readonly "my_homes": __DbViewBase["myHomes"];
-  /** @deprecated Use `myMembers` instead. This alias will be removed in the next major version. */
-  readonly "my_members": __DbViewBase["myMembers"];
-  /** @deprecated Use `myPantryItemDetails` instead. This alias will be removed in the next major version. */
-  readonly "my_pantry_item_details": __DbViewBase["myPantryItemDetails"];
-  /** @deprecated Use `myPantryItems` instead. This alias will be removed in the next major version. */
-  readonly "my_pantry_items": __DbViewBase["myPantryItems"];
-  /** @deprecated Use `myReminderDeliveries` instead. This alias will be removed in the next major version. */
-  readonly "my_reminder_deliveries": __DbViewBase["myReminderDeliveries"];
-  /** @deprecated Use `myReminders` instead. This alias will be removed in the next major version. */
-  readonly "my_reminders": __DbViewBase["myReminders"];
-  /** @deprecated Use `myResidences` instead. This alias will be removed in the next major version. */
-  readonly "my_residences": __DbViewBase["myResidences"];
-  /** @deprecated Use `mySharedMemories` instead. This alias will be removed in the next major version. */
-  readonly "my_shared_memories": __DbViewBase["mySharedMemories"];
 };
 
 type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;
 export type Tables = __TablesBase & {
   /** @deprecated Use `myAiStatus` instead. This alias will be removed in the next major version. */
   readonly "my_ai_status": __TablesBase["myAiStatus"];
-  /** @deprecated Use `myBillAllocations` instead. This alias will be removed in the next major version. */
-  readonly "my_bill_allocations": __TablesBase["myBillAllocations"];
-  /** @deprecated Use `myBillLineAllocations` instead. This alias will be removed in the next major version. */
-  readonly "my_bill_line_allocations": __TablesBase["myBillLineAllocations"];
-  /** @deprecated Use `myBillLines` instead. This alias will be removed in the next major version. */
-  readonly "my_bill_lines": __TablesBase["myBillLines"];
-  /** @deprecated Use `myBillReviews` instead. This alias will be removed in the next major version. */
-  readonly "my_bill_reviews": __TablesBase["myBillReviews"];
   /** @deprecated Use `myConversationMessages` instead. This alias will be removed in the next major version. */
   readonly "my_conversation_messages": __TablesBase["myConversationMessages"];
   /** @deprecated Use `myConversations` instead. This alias will be removed in the next major version. */
   readonly "my_conversations": __TablesBase["myConversations"];
-  /** @deprecated Use `myExpenseSplits` instead. This alias will be removed in the next major version. */
-  readonly "my_expense_splits": __TablesBase["myExpenseSplits"];
-  /** @deprecated Use `myExpenses` instead. This alias will be removed in the next major version. */
-  readonly "my_expenses": __TablesBase["myExpenses"];
-  /** @deprecated Use `myFlatRules` instead. This alias will be removed in the next major version. */
-  readonly "my_flat_rules": __TablesBase["myFlatRules"];
-  /** @deprecated Use `myHomeMemberships` instead. This alias will be removed in the next major version. */
-  readonly "my_home_memberships": __TablesBase["myHomeMemberships"];
-  /** @deprecated Use `myHomeSettings` instead. This alias will be removed in the next major version. */
-  readonly "my_home_settings": __TablesBase["myHomeSettings"];
-  /** @deprecated Use `myHomes` instead. This alias will be removed in the next major version. */
-  readonly "my_homes": __TablesBase["myHomes"];
-  /** @deprecated Use `myMembers` instead. This alias will be removed in the next major version. */
-  readonly "my_members": __TablesBase["myMembers"];
-  /** @deprecated Use `myPantryItemDetails` instead. This alias will be removed in the next major version. */
-  readonly "my_pantry_item_details": __TablesBase["myPantryItemDetails"];
-  /** @deprecated Use `myPantryItems` instead. This alias will be removed in the next major version. */
-  readonly "my_pantry_items": __TablesBase["myPantryItems"];
-  /** @deprecated Use `myReminderDeliveries` instead. This alias will be removed in the next major version. */
-  readonly "my_reminder_deliveries": __TablesBase["myReminderDeliveries"];
-  /** @deprecated Use `myReminders` instead. This alias will be removed in the next major version. */
-  readonly "my_reminders": __TablesBase["myReminders"];
-  /** @deprecated Use `myResidences` instead. This alias will be removed in the next major version. */
-  readonly "my_residences": __TablesBase["myResidences"];
-  /** @deprecated Use `mySharedMemories` instead. This alias will be removed in the next major version. */
-  readonly "my_shared_memories": __TablesBase["mySharedMemories"];
 };
 
 /** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */

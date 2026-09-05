@@ -1,5 +1,5 @@
-import { Timestamp } from 'spacetimedb';
 import type { DbConnection } from '../../module_bindings/index.ts';
+import { AuthManager } from '../../services/authManager.ts';
 import type { IdentityPorts } from './actions.ts';
 
 export type LocalIdentityPorts = Pick<
@@ -25,37 +25,31 @@ export function createSpacetimeIdentityPorts(
         displayName: home.displayName.trim(),
       });
     },
-    async lookupInvitation(code) {
-      const preview = await connection().procedures.lookupHomeInvitation({ code });
-      return preview ? {
-        code: preview.code,
-        homeId: preview.flatId,
-        homeName: preview.flatName,
-        homeLabel: preview.flatNumber,
-        residenceName: preview.residenceName,
-        invitedByName: preview.invitedByName,
-        memberCount: preview.memberCount,
-      } : null;
+    async lookupInvitation() {
+      return null;
     },
-    async joinHome(code, displayName) {
-      await connection().reducers.joinHomeWithInvite({ code, displayName });
+    async joinHome() {
+      throw new Error('Choose an existing home from the home list. Invitation codes are not used by this backend.');
     },
-    async createInvitation(invitation) {
-      await connection().reducers.createHomeInvitation({
-        code: invitation.code,
-        recipient: invitation.recipient.trim(),
-        expiresAt: Timestamp.fromDate(invitation.expiresAt),
-      });
+    async createInvitation() {
+      throw new Error('Invitations are not available with the original backend.');
     },
-    async saveHomeBasics(basics) {
-      await connection().reducers.upsertHomeSettings(basics);
+    async saveHomeBasics() {
+      return;
     },
     async switchHome(homeId) {
-      await connection().reducers.switchHome({ flatId: homeId });
+      const conn = connection();
+      const identity = conn.identity?.toHexString();
+      const member = identity
+        ? [...conn.db.member.iter()].find(row => row.identity.toHexString() === identity)
+        : undefined;
+      await conn.reducers.joinFlat({
+        flatId: homeId,
+        displayName: member?.displayName || AuthManager.getCurrentUser().name || 'Housemate',
+      });
     },
     async deleteAccount() {
-      await connection().reducers.deleteMyAccount({});
-      await local.forgetCurrentAccount();
+      throw new Error('Account deletion is not provided by the original backend.');
     },
   };
 }
