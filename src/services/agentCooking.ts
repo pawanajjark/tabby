@@ -92,7 +92,35 @@ Provide output as a valid JSON object matching this schema:
       );
 
       if (aiResult && Array.isArray(aiResult.recipes) && aiResult.recipes.length > 0) {
-        return aiResult;
+        const pantryNames = pantryItems.map(item => item.name.toLowerCase().trim());
+        const recipes = aiResult.recipes
+          .filter(recipe => recipe && typeof recipe.title === 'string' && Array.isArray(recipe.ingredients))
+          .map((recipe, index) => {
+            const ingredients = recipe.ingredients
+              .filter(ingredient => ingredient && typeof ingredient.name === 'string')
+              .map(ingredient => {
+                const name = ingredient.name.toLowerCase().trim();
+                const inPantry = pantryNames.some(pantryName =>
+                  pantryName.includes(name) || name.includes(pantryName)
+                );
+                return { ...ingredient, inPantry };
+              });
+
+            return {
+              ...recipe,
+              id: recipe.id || `recipe_${index + 1}`,
+              ingredients,
+              missingCount: ingredients.filter(ingredient => !ingredient.inPantry).length,
+              compatibleRoommates: Array.isArray(recipe.compatibleRoommates)
+                ? recipe.compatibleRoommates
+                : roommates.map(roommate => roommate.displayName),
+            };
+          });
+
+        if (recipes.length > 0) {
+          recipes.sort((a, b) => a.missingCount - b.missingCount);
+          return { headline: aiResult.headline || 'Meals matched to your current pantry.', recipes };
+        }
       }
     }
 
@@ -134,7 +162,7 @@ Provide output as a valid JSON object matching this schema:
           { name: 'garlic', quantity: 4, unit: 'cloves', inPantry: has('garlic'), pantryQuantity: getQty('garlic') },
           { name: 'olive oil / cooking oil', quantity: 2, unit: 'tbsp', inPantry: has('oil'), pantryQuantity: getQty('oil') },
           { name: 'chili flakes / pepper', quantity: 1, unit: 'tsp', inPantry: has('chili') || has('pepper') || has('spice'), pantryQuantity: 1 },
-          { name: 'salt', quantity: 1, unit: 'pinch', inPantry: true, pantryQuantity: 1 },
+          { name: 'salt', quantity: 1, unit: 'pinch', inPantry: has('salt'), pantryQuantity: getQty('salt') },
         ],
         missingCount: 0,
         instructions: [

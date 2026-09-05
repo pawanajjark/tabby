@@ -39,7 +39,7 @@ export class AgentShopping {
       `${r.displayName} (Diet: ${r.dietaryTags.join(', ')} | Cooks: ${r.cookingHabits.join(', ')})`
     ).join('\n');
 
-    // Attempt Gemini AI Generation if available
+    // Use OpenAI generation when configured.
     if (AIProvider.hasApiKey()) {
       const prompt = `You are Tabby's Agent 1: Shopping Assistant.
 Given the current pantry inventory and the household roommates' cooking habits and dietary restrictions, generate an intelligent grocery restock shopping list.
@@ -111,15 +111,15 @@ Produce a JSON object with this exact structure:
     }> = [
       { name: 'onions', qty: 2, unit: 'kg', category: 'Produce', min: 1, reason: 'Essential base for cooking curries, pasta, and daily meals.', meals: ['Dal Tadka', 'Curry', 'Pasta'] },
       { name: 'tomatoes', qty: 1.5, unit: 'kg', category: 'Produce', min: 1, reason: 'Key ingredient for sauces, gravies, and fresh salads.', meals: ['Pasta', 'Curry', 'Salad'] },
-      { name: 'garlic & ginger', qty: 250, unit: 'g', category: 'Produce', min: 100, reason: 'Aromatic foundation for household recipes.', meals: ['Stir Fry', 'Curry', 'Dal'] },
-      { name: 'olive oil / cooking oil', qty: 1, unit: 'bottle', category: 'Grains & Spices', min: 1, reason: 'Daily cooking oil is running low or needed for regular meals.', meals: ['All household meals'] },
-      { name: 'rice / pasta', qty: 2, unit: 'kg', category: 'Grains & Spices', min: 1, reason: 'Carbohydrate staple requested across usual roommate meals.', meals: ['Fried Rice', 'Pasta', 'Dal Rice'] },
-      { name: 'lentils / dal', qty: 1, unit: 'kg', category: 'Grains & Spices', min: 1, reason: 'Protein-rich staple aligned with roommate dietary habits.', meals: ['Dal Tadka', 'Khichdi'] },
+      { name: 'garlic', qty: 250, unit: 'g', category: 'Produce', min: 100, reason: 'Aromatic foundation for household recipes.', meals: ['Stir Fry', 'Curry', 'Dal'] },
+      { name: 'cooking oil', qty: 1, unit: 'bottle', category: 'Grains & Spices', min: 1, reason: 'Daily cooking oil is running low or needed for regular meals.', meals: ['All household meals'] },
+      { name: 'rice', qty: 2, unit: 'kg', category: 'Grains & Spices', min: 1, reason: 'A staple used across usual roommate meals.', meals: ['Fried Rice', 'Dal Rice'] },
+      { name: 'lentils', qty: 1, unit: 'kg', category: 'Grains & Spices', min: 1, reason: 'Protein-rich staple aligned with roommate dietary habits.', meals: ['Dal Tadka', 'Khichdi'] },
     ];
 
     if (!hasVegan) {
       staples.push({
-        name: 'milk / curd',
+        name: 'milk',
         qty: 2,
         unit: 'litres',
         category: 'Dairy & Protein',
@@ -129,7 +129,7 @@ Produce a JSON object with this exact structure:
       });
       if (hasVegetarian) {
         staples.push({
-          name: 'paneer / tofu',
+          name: 'paneer',
           qty: 400,
           unit: 'g',
           category: 'Dairy & Protein',
@@ -192,7 +192,7 @@ Produce a JSON object with this exact structure:
       const habitLower = habit.toLowerCase();
       if (habitLower.includes('biryani') && !pantryMap.has('biryani masala') && !pantryMap.has('basmati rice')) {
         items.push({
-          itemName: 'Basmati Rice & Biryani Spices',
+          itemName: 'Basmati rice',
           suggestedQuantity: 1,
           unit: 'pack',
           urgency: 'recommended',
@@ -203,7 +203,7 @@ Produce a JSON object with this exact structure:
       }
       if (habitLower.includes('pasta') && !pantryMap.has('parmesan') && !pantryMap.has('pasta sauce')) {
         items.push({
-          itemName: 'Pasta Sauce & Herbs (Oregano/Basil)',
+          itemName: 'Pasta sauce',
           suggestedQuantity: 1,
           unit: 'jar',
           urgency: 'optional',
@@ -215,7 +215,7 @@ Produce a JSON object with this exact structure:
     });
 
     return {
-      summary: `Tabby analyzed ${pantryItems.length} pantry items against ${roommates.length} roommate preferences (${allHabits.length} favorite recipes).`,
+      summary: `Tabby analyzed ${pantryItems.length} pantry items for ${roommates.length} household members using ${allHabits.length} saved cooking habits.`,
       generatedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       items: items.length > 0 ? items : [
         {

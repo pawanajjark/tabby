@@ -13,16 +13,16 @@ app.innerHTML = `
     <header>
       <div class="header-top">
         <div>
-          <p class="eyebrow">SHARED HOME MEMORY · 3 AGENTS</p>
+          <p class="eyebrow">SHARED HOME OPERATING SYSTEM</p>
           <h1>tabby<span>.</span></h1>
           <p id="status"><span class="status-dot"></span> <span id="status-text">Connecting your home…</span></p>
         </div>
         <div class="header-actions">
           <button id="btn-openai-config" class="btn-secondary">
-            ⚡ ${AIProvider.hasApiKey() ? 'OpenAI (' + AIProvider.getModelName() + ')' : 'Set OpenAI Key'}
+            ${AIProvider.hasApiKey() ? 'OpenAI: ' + AIProvider.getModelName() : 'Configure OpenAI'}
           </button>
           <button id="btn-my-profile" class="btn-secondary">
-            👤 <span id="my-name-label">My Profile</span>
+            <span id="my-name-label">My profile</span>
           </button>
         </div>
       </div>
@@ -43,7 +43,7 @@ app.innerHTML = `
             <h2>Pantry Inventory</h2>
             <p>Live inventory synchronized across all roommates</p>
           </div>
-          <button id="btn-open-add-pantry" class="btn-primary">+ Add Item</button>
+          <button id="btn-open-add-pantry" class="btn-primary">Add item</button>
         </div>
         <div id="pantry-list" class="list">
           <p class="empty">Loading pantry items…</p>
@@ -53,14 +53,15 @@ app.innerHTML = `
       <section class="card-section">
         <div class="card-header">
           <div>
-            <h2>Agent 1: Smart Restock Plan</h2>
-            <p id="shopping-plan-subtitle">Analyzes pantry stock, roommate diets & cooking habits</p>
+            <p class="section-kicker">Shopping agent</p>
+            <h2>Smart restock plan</h2>
+            <p id="shopping-plan-subtitle">Matches pantry levels with household preferences and cooking habits</p>
           </div>
-          <button id="btn-run-shopping-agent" class="btn-coral">⚡ Generate Plan</button>
+          <button id="btn-run-shopping-agent" class="btn-coral">Generate plan</button>
         </div>
         <div id="shopping-plan-summary" style="color: var(--text-secondary); font-size: 0.88rem; margin-bottom: 14px;"></div>
         <div id="shopping-items-list" class="list">
-          <p class="empty">Click "Generate Plan" to inspect pantry and calculate restock needs.</p>
+          <p class="empty">Generate a plan to inspect pantry levels and calculate restock needs.</p>
         </div>
       </section>
     </div>
@@ -70,13 +71,14 @@ app.innerHTML = `
       <section class="card-section">
         <div class="card-header">
           <div>
-            <h2>Agent 2: Zero-Waste Cooking Assistant</h2>
+            <p class="section-kicker">Cooking agent</p>
+            <h2>Zero-waste meal planner</h2>
             <p id="cooking-headline">Suggests tailored recipes using available pantry stock and dietary rules</p>
           </div>
-          <button id="btn-run-cooking-agent" class="btn-coral">✨ What Can We Cook?</button>
+          <button id="btn-run-cooking-agent" class="btn-coral">Find meals</button>
         </div>
         <div id="recipes-list">
-          <p class="empty">Click "What Can We Cook?" to generate recipes customized to your pantry!</p>
+          <p class="empty">Find meals that fit your current pantry and household preferences.</p>
         </div>
       </section>
     </div>
@@ -86,33 +88,30 @@ app.innerHTML = `
       <section class="card-section">
         <div class="card-header">
           <div>
-            <h2>Agent 3: Receipt Ingestion & Split</h2>
-            <p>Upload bill photo / PDF or paste receipt text with dietary exemption rules</p>
+            <p class="section-kicker">Billing agent</p>
+            <h2>Receipt capture and fair split</h2>
+            <p>Upload a receipt image or paste itemized text to apply household exemption rules</p>
           </div>
         </div>
 
-        <div id="bill-dropzone" class="dropzone">
-          <strong style="font-size: 1.1rem; display: block; margin-bottom: 4px;">📷 Drag & Drop Receipt Photo / PDF</strong>
-          <span style="color: var(--text-muted); font-size: 0.82rem;">Or click here to browse files for LangChain OpenAI vision analysis</span>
-          <input type="file" id="bill-file-input" accept="image/*,application/pdf" style="display: none;" />
-        </div>
-
-        <div style="display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap;">
-          <button id="btn-sample-dinner" class="btn-secondary">🍗 Sample Dinner Bill (Meat + Veg + Drinks)</button>
-          <button id="btn-sample-grocery" class="btn-secondary">🛒 Sample Grocery Bill</button>
+        <div id="bill-dropzone" class="dropzone" role="button" tabindex="0" aria-label="Upload a receipt image">
+          <strong>Drop a receipt image here</strong>
+          <span>or browse to select a JPG, PNG, or WebP image</span>
+          <input type="file" id="bill-file-input" accept="image/jpeg,image/png,image/webp" hidden />
         </div>
 
         <form id="bill-parse-form">
           <div style="margin-bottom: 12px;">
             <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-secondary); display: block; margin-bottom: 4px;">Bill Title</label>
-            <input id="bill-title-input" placeholder="e.g. Friday Night Dinner" required />
+            <input id="bill-title-input" aria-label="Bill title" required />
           </div>
           <div style="margin-bottom: 14px;">
             <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-secondary); display: block; margin-bottom: 4px;">Receipt Items</label>
-            <textarea id="bill-text-input" rows="5" placeholder="Chicken Butter Masala - 380&#10;Paneer Tikka - 260&#10;Garlic Naan (3) - 150&#10;Craft Beer - 300&#10;Taxes & Service - 110"></textarea>
+            <textarea id="bill-text-input" rows="6" aria-label="Receipt items"></textarea>
+            <small class="field-help">Enter one item per line in the format Item name - amount.</small>
           </div>
           <button type="submit" class="btn-primary" style="width: 100%;">
-            ⚖️ Parse & Calculate Rule-Based Split
+            Calculate split
           </button>
         </form>
 
@@ -148,7 +147,7 @@ app.innerHTML = `
         <div class="card-header">
           <div>
             <h2>Split Configuration Rules</h2>
-            <p>Rules enforced by Agent 3 when calculating item shares</p>
+            <p>Active rules applied by the billing agent when calculating item shares</p>
           </div>
         </div>
         <div id="rules-display-list" class="list"></div>
@@ -157,20 +156,20 @@ app.innerHTML = `
   </section>
 
   <!-- Floating Chat Toggle & Drawer -->
-  <button id="chat-toggle" class="chat-toggle" aria-label="Open Tabby Chat">✦</button>
+  <button id="chat-toggle" class="chat-toggle" aria-label="Open Tabby chat">Chat</button>
   <aside id="chat" class="chat" aria-hidden="true">
     <div class="chat-head">
       <div>
         <strong>Tabby</strong>
-        <small>your flat’s shared memory & 3 agents</small>
+        <small>Ask the household agents to take action</small>
       </div>
-      <button id="chat-close">×</button>
+      <button id="chat-close" aria-label="Close chat">Close</button>
     </div>
     <div id="messages" class="messages">
-      <p class="hint">Try: “I bought 10 eggs”, “Electricity bill ₹2400”, or “What can we cook?”</p>
+      <p class="hint">Record pantry purchases and expenses, or ask the cooking agent for a meal plan.</p>
     </div>
     <form id="chat-form">
-      <input id="chat-input" placeholder="Tell Tabby something…" autocomplete="off" />
+      <input id="chat-input" aria-label="Message Tabby" autocomplete="off" />
       <button type="submit">Send</button>
     </form>
   </aside>
@@ -181,15 +180,15 @@ app.innerHTML = `
     <div class="modal-card">
       <p class="eyebrow">LANGCHAIN OPENAI CONFIGURATION</p>
       <h3>OpenAI Agent Settings</h3>
-      <p>Configure your OpenAI API Key and Model for LangChain agent reasoning and multimodal receipt vision.</p>
+      <p>Connect an OpenAI model for generated recommendations and receipt image analysis. Text workflows continue to work without a key.</p>
       <div style="display: grid; gap: 10px;">
         <div>
           <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-secondary);">OpenAI API Key</label>
-          <input id="openai-key-input" type="password" placeholder="sk-..." />
+          <input id="openai-key-input" type="password" autocomplete="off" />
         </div>
         <div>
           <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-secondary);">Model Name</label>
-          <input id="openai-model-input" placeholder="gpt-5.6-sol" value="gpt-5.6-sol" />
+          <input id="openai-model-input" value="${AIProvider.getModelName()}" />
         </div>
       </div>
       <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px;">
@@ -211,11 +210,12 @@ app.innerHTML = `
       </div>
       <div>
         <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-secondary); display: block; margin-bottom: 4px;">Dietary Restrictions</label>
-        <input id="profile-diet-input" placeholder="vegetarian, vegan, lactose_intolerant, no_alcohol" />
+        <input id="profile-diet-input" aria-describedby="diet-help" />
+        <small id="diet-help" class="field-help">Comma-separated: vegetarian, vegan, jain, lactose_intolerant, gluten_free, no_alcohol.</small>
       </div>
       <div>
         <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-secondary); display: block; margin-bottom: 4px;">Frequent Dishes / Habits</label>
-        <input id="profile-habits-input" placeholder="Dal Tadka, Pasta, Fried Rice" />
+        <input id="profile-habits-input" />
       </div>
       <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px;">
         <button type="button" id="btn-close-profile-modal" class="btn-secondary">Cancel</button>
@@ -231,7 +231,7 @@ app.innerHTML = `
       <h3>Add Pantry Item</h3>
       <div>
         <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-secondary); display: block; margin-bottom: 4px;">Item Name</label>
-        <input id="pantry-item-name" placeholder="e.g. Eggs, Rice, Milk, Pasta" required />
+        <input id="pantry-item-name" required />
       </div>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
         <div>
@@ -249,6 +249,7 @@ app.innerHTML = `
       </div>
     </form>
   </div>
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
 `;
 
 // ==========================================
@@ -259,6 +260,7 @@ const database = import.meta.env.VITE_SPACETIMEDB_DB ?? 'tabby';
 const tokenKey = `${host}/${database}/auth_token`;
 
 let currentIdentity = '';
+let isConnected = false;
 let currentShoppingPlan: ShoppingPlan | null = null;
 let currentCookingPlan: CookingPlan | null = null;
 let currentSplitResult: SplitResult | null = null;
@@ -274,6 +276,39 @@ function escapeHtml(value: string) {
   })[character]!);
 }
 
+function memberDisplayName(identityHex: string, displayName: string) {
+  const cleanName = displayName.trim();
+  if (cleanName && cleanName.toLowerCase() !== 'roommate') return cleanName;
+  return `Household member ${identityHex.slice(0, 6)}`;
+}
+
+function showToast(message: string, tone: 'success' | 'error' = 'success') {
+  const region = document.querySelector<HTMLElement>('#toast-region')!;
+  const toast = document.createElement('div');
+  toast.className = `toast ${tone}`;
+  toast.textContent = message;
+  region.appendChild(toast);
+  window.setTimeout(() => toast.remove(), 4200);
+}
+
+function requireConnection() {
+  if (isConnected) return true;
+  showToast('Tabby is not connected to the shared home. Check the database connection and try again.', 'error');
+  return false;
+}
+
+function setButtonBusy(button: HTMLButtonElement | null, busy: boolean, busyLabel: string) {
+  if (!button) return;
+  if (busy) {
+    button.dataset.label = button.textContent || '';
+    button.textContent = busyLabel;
+    button.disabled = true;
+  } else {
+    button.textContent = button.dataset.label || button.textContent;
+    button.disabled = false;
+  }
+}
+
 const connection = DbConnection.builder()
   .withUri(host)
   .withDatabaseName(database)
@@ -281,8 +316,9 @@ const connection = DbConnection.builder()
   .onConnect((ctx, identity, token) => {
     localStorage.setItem(tokenKey, token);
     currentIdentity = identity.toHexString();
+    isConnected = true;
     const statusText = document.querySelector<HTMLElement>('#status-text')!;
-    statusText.textContent = 'Live · shared with your home';
+    statusText.textContent = 'Live and shared with your home';
     document.querySelector('.status-dot')?.classList.remove('offline');
 
     ctx.subscriptionBuilder()
@@ -301,12 +337,14 @@ const connection = DbConnection.builder()
   })
   .onConnectError((_ctx, error) => {
     const statusText = document.querySelector<HTMLElement>('#status-text')!;
-    statusText.textContent = 'Offline (Local demo active)';
+    isConnected = false;
+    statusText.textContent = 'Unable to connect';
     document.querySelector('.status-dot')?.classList.add('offline');
     console.warn('SpacetimeDB connection error:', error);
     renderAll();
   })
   .onDisconnect(() => {
+    isConnected = false;
     const statusText = document.querySelector<HTMLElement>('#status-text')!;
     statusText.textContent = 'Offline';
     document.querySelector('.status-dot')?.classList.add('offline');
@@ -329,18 +367,16 @@ function getAllRoommates(): RoommateProfile[] {
   if (dbMembers.length > 0) {
     return dbMembers.map(m => {
       const hex = m.identity.toHexString();
-      const profile = HouseholdConfigManager.getProfile(hex, m.displayName);
-      profile.displayName = m.displayName;
+      const displayName = memberDisplayName(hex, m.displayName);
+      const profile = HouseholdConfigManager.getProfile(hex, displayName);
+      profile.displayName = displayName;
       return profile;
     });
   }
 
-  const myHex = currentIdentity || '0x_user_you';
-  return [
-    HouseholdConfigManager.getProfile(myHex, 'You'),
-    HouseholdConfigManager.getProfile('0x_alex_veg', 'Alex (Vegetarian)'),
-    HouseholdConfigManager.getProfile('0x_bob_omni', 'Bob (Omnivore)'),
-  ];
+  return currentIdentity
+    ? [HouseholdConfigManager.getProfile(currentIdentity, 'You')]
+    : [];
 }
 
 function renderAll() {
@@ -365,7 +401,7 @@ function renderPantry() {
   const items = [...connection.db.pantryItem.iter()];
 
   if (items.length === 0) {
-    container.innerHTML = `<p class="empty">The pantry is empty. Tell Tabby what you bought or click "+ Add Item".</p>`;
+    container.innerHTML = `<div class="empty-state"><strong>Your pantry is ready to set up</strong><p>Add the ingredients and household supplies you currently have.</p></div>`;
     return;
   }
 
@@ -385,6 +421,7 @@ function renderPantry() {
 
   container.querySelectorAll('.btn-pantry-inc').forEach(btn => {
     btn.addEventListener('click', () => {
+      if (!requireConnection()) return;
       const name = btn.getAttribute('data-name')!;
       const unit = btn.getAttribute('data-unit') || 'items';
       connection.reducers.addPantryItem({ name, quantity: 1, unit });
@@ -393,6 +430,7 @@ function renderPantry() {
 
   container.querySelectorAll('.btn-pantry-dec').forEach(btn => {
     btn.addEventListener('click', () => {
+      if (!requireConnection()) return;
       const name = btn.getAttribute('data-name')!;
       connection.reducers.addPantryItem({ name, quantity: -1, unit: 'items' });
     });
@@ -404,13 +442,14 @@ function renderExpenses() {
   const expenses = [...connection.db.expense.iter()].reverse();
 
   if (expenses.length === 0) {
-    container.innerHTML = `<p class="empty">No expenses yet. Upload a bill or calculate a split with Agent 3.</p>`;
+    container.innerHTML = `<div class="empty-state"><strong>No household expenses yet</strong><p>Use the billing agent to calculate and record the first expense.</p></div>`;
     return;
   }
 
   const members = [...connection.db.member.iter()];
   const getMemberName = (ident: { toHexString(): string }) => {
-    return members.find(m => m.identity.toHexString() === ident.toHexString())?.displayName || 'Roommate';
+    const member = members.find(m => m.identity.toHexString() === ident.toHexString());
+    return member ? memberDisplayName(member.identity.toHexString(), member.displayName) : 'Household member';
   };
 
   container.innerHTML = expenses.map(expense => `
@@ -428,16 +467,20 @@ function renderRoommatesAndRules() {
   const roommates = getAllRoommates();
   const list = document.querySelector<HTMLElement>('#roommates-display-list')!;
 
-  list.innerHTML = roommates.map(r => `
+  list.innerHTML = roommates.length === 0
+    ? `<div class="empty-state"><strong>No connected roommates</strong><p>Profiles will appear after the shared home connects.</p></div>`
+    : roommates.map(r => `
     <article style="align-items: flex-start; flex-direction: column; gap: 6px;">
       <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
-        <strong>👤 ${escapeHtml(r.displayName)} ${r.identityHex === currentIdentity ? '(You)' : ''}</strong>
+        <strong>${escapeHtml(r.displayName)} ${r.identityHex === currentIdentity ? '(You)' : ''}</strong>
         <div>
-          ${r.dietaryTags.map(tag => `<span class="tag-pill tag-${tag.replace(/_/g, '-')}">${escapeHtml(tag)}</span>`).join(' ')}
+          ${r.dietaryTags.length > 0
+            ? r.dietaryTags.map(tag => `<span class="tag-pill tag-${tag.replace(/_/g, '-')}">${escapeHtml(tag.replace(/_/g, ' '))}</span>`).join(' ')
+            : '<span class="profile-missing">Preferences not set</span>'}
         </div>
       </div>
       <small style="color: var(--text-secondary);">
-        🍳 <strong>Habits:</strong> ${escapeHtml(r.cookingHabits.join(', ') || 'General cooking')}
+        <strong>Cooking habits:</strong> ${escapeHtml(r.cookingHabits.join(', ') || 'Not added yet')}
       </small>
     </article>
   `).join('');
@@ -474,12 +517,13 @@ function renderChat() {
   if (history.length > 0) {
     const members = [...connection.db.member.iter()];
     const getMemberName = (ident: { toHexString(): string }) => {
-      return members.find(m => m.identity.toHexString() === ident.toHexString())?.displayName || 'Roommate';
+      const member = members.find(m => m.identity.toHexString() === ident.toHexString());
+      return member ? memberDisplayName(member.identity.toHexString(), member.displayName) : 'Household member';
     };
 
     container.innerHTML = history.map(msg => {
       if (msg.kind === 'system' || msg.kind === 'agent') {
-        return `<p class="message system">🤖 ${escapeHtml(msg.body)}</p>`;
+        return `<p class="message system"><small>Tabby</small>${escapeHtml(msg.body)}</p>`;
       }
       const isMe = msg.sender.toHexString() === currentIdentity;
       return `<p class="message ${isMe ? 'user' : 'system'}"><small>${escapeHtml(getMemberName(msg.sender))}</small>${escapeHtml(msg.body)}</p>`;
@@ -494,8 +538,10 @@ function renderChat() {
 async function refreshShoppingPlan() {
   const container = document.querySelector<HTMLElement>('#shopping-items-list')!;
   const summaryEl = document.querySelector<HTMLElement>('#shopping-plan-summary')!;
+  const button = document.querySelector<HTMLButtonElement>('#btn-run-shopping-agent');
 
-  container.innerHTML = `<p class="empty">⚡ Agent 1 is evaluating pantry inventory and roommate cooking habits…</p>`;
+  setButtonBusy(button, true, 'Generating plan');
+  container.innerHTML = `<p class="empty">The shopping agent is evaluating pantry levels and household preferences.</p>`;
 
   const pantryItems = [...connection.db.pantryItem.iter()].map(p => ({
     id: p.id,
@@ -505,10 +551,11 @@ async function refreshShoppingPlan() {
   }));
   const roommates = getAllRoommates();
 
-  currentShoppingPlan = await AgentShopping.generateShoppingPlan(pantryItems, roommates);
-  summaryEl.textContent = `💡 ${currentShoppingPlan.summary}`;
+  try {
+    currentShoppingPlan = await AgentShopping.generateShoppingPlan(pantryItems, roommates);
+    summaryEl.textContent = currentShoppingPlan.summary;
 
-  container.innerHTML = currentShoppingPlan.items.map(item => `
+    container.innerHTML = currentShoppingPlan.items.map(item => `
     <article>
       <div style="flex: 1;">
         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 3px;">
@@ -526,15 +573,23 @@ async function refreshShoppingPlan() {
   `).join('');
 
   container.querySelectorAll('.btn-add-plan-item').forEach(btn => {
-    btn.addEventListener('click', () => {
+      btn.addEventListener('click', () => {
+        if (!requireConnection()) return;
       const name = btn.getAttribute('data-name')!;
       const quantity = parseInt(btn.getAttribute('data-qty') || '1', 10);
       const unit = btn.getAttribute('data-unit') || 'items';
       connection.reducers.addPantryItem({ name, quantity, unit });
-      btn.textContent = '✓ Added';
+      btn.textContent = 'Added';
       (btn as HTMLButtonElement).disabled = true;
+      showToast(`${name} was added to the pantry.`);
     });
   });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'The shopping plan could not be generated.';
+    container.innerHTML = `<p class="notice error">${escapeHtml(message)}</p>`;
+  } finally {
+    setButtonBusy(button, false, 'Generating plan');
+  }
 }
 
 // ==========================================
@@ -543,8 +598,10 @@ async function refreshShoppingPlan() {
 async function refreshCookingPlan() {
   const container = document.querySelector<HTMLElement>('#recipes-list')!;
   const headlineEl = document.querySelector<HTMLElement>('#cooking-headline')!;
+  const button = document.querySelector<HTMLButtonElement>('#btn-run-cooking-agent');
 
-  container.innerHTML = `<p class="empty">🍳 Agent 2 is crafting zero-waste recipes tailored to your pantry…</p>`;
+  setButtonBusy(button, true, 'Finding meals');
+  container.innerHTML = `<p class="empty">The cooking agent is matching meals to your pantry.</p>`;
 
   const pantryItems = [...connection.db.pantryItem.iter()].map(p => ({
     id: p.id,
@@ -554,32 +611,33 @@ async function refreshCookingPlan() {
   }));
   const roommates = getAllRoommates();
 
-  currentCookingPlan = await AgentCooking.generateRecipes(pantryItems, roommates);
-  headlineEl.textContent = currentCookingPlan.headline;
+  try {
+    currentCookingPlan = await AgentCooking.generateRecipes(pantryItems, roommates);
+    headlineEl.textContent = currentCookingPlan.headline;
 
-  container.innerHTML = currentCookingPlan.recipes.map(recipe => `
+    container.innerHTML = currentCookingPlan.recipes.map(recipe => `
     <div class="recipe-box">
       <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 8px;">
         <div>
           <h3>${escapeHtml(recipe.title)}</h3>
           <p>${escapeHtml(recipe.description)}</p>
         </div>
-        <button class="btn-primary btn-cook-recipe" data-recipe-id="${recipe.id}">
-          👨‍🍳 Cook This Meal
+        <button class="btn-primary btn-cook-recipe" data-recipe-id="${recipe.id}" ${recipe.missingCount > 0 ? 'disabled' : ''}>
+          ${recipe.missingCount > 0 ? `${recipe.missingCount} missing` : 'Cook this meal'}
         </button>
       </div>
 
       <div class="recipe-meta">
-        <span>⏱️ ${recipe.prepTimeMinutes + recipe.cookTimeMinutes} mins total</span>
-        <span>🍽️ ${recipe.servings} servings</span>
-        <span>🔥 ${recipe.difficulty}</span>
-        <span>👥 Safe for: ${recipe.compatibleRoommates.map(escapeHtml).join(', ')}</span>
+        <span>${recipe.prepTimeMinutes + recipe.cookTimeMinutes} min total</span>
+        <span>${recipe.servings} servings</span>
+        <span>${recipe.difficulty}</span>
+        <span>Suitable for ${recipe.compatibleRoommates.map(escapeHtml).join(', ') || 'the household'}</span>
       </div>
 
       <div class="chips-container">
         ${recipe.ingredients.map(ing => `
           <span class="chip ${ing.inPantry ? 'have' : 'missing'}">
-            ${ing.inPantry ? '✓' : '✗'} ${ing.quantity} ${escapeHtml(ing.unit)} ${escapeHtml(ing.name)}
+            <span class="chip-state">${ing.inPantry ? 'In pantry' : 'Missing'}</span> ${ing.quantity} ${escapeHtml(ing.unit)} ${escapeHtml(ing.name)}
           </span>
         `).join('')}
       </div>
@@ -589,7 +647,7 @@ async function refreshCookingPlan() {
       </ol>
 
       <div style="font-size: 0.8rem; color: var(--accent-amber); background: #fffbeb; padding: 8px 12px; border-radius: 8px; border: 1px solid #fef3c7;">
-        💡 <strong>Chef Tip:</strong> ${escapeHtml(recipe.tips)}
+        <strong>Kitchen note:</strong> ${escapeHtml(recipe.tips)}
       </div>
     </div>
   `).join('');
@@ -599,20 +657,37 @@ async function refreshCookingPlan() {
       const recipeId = btn.getAttribute('data-recipe-id')!;
       const recipe = currentCookingPlan?.recipes.find(r => r.id === recipeId);
       if (recipe) {
+        if (!requireConnection()) return;
+        const pantryRows = [...connection.db.pantryItem.iter()];
+        const consumedNames = new Set<string>();
         recipe.ingredients.forEach(ing => {
           if (ing.inPantry) {
+            const ingredientName = ing.name.toLowerCase().trim();
+            const pantryItem = pantryRows.find(item => {
+              const pantryName = item.name.toLowerCase().trim();
+              return pantryName.includes(ingredientName) || ingredientName.includes(pantryName);
+            });
+            if (!pantryItem || consumedNames.has(pantryItem.name)) return;
+            consumedNames.add(pantryItem.name);
             connection.reducers.addPantryItem({
-              name: ing.name,
-              quantity: -Math.max(1, Math.min(ing.quantity, 1)),
-              unit: ing.unit,
+              name: pantryItem.name,
+              quantity: -1,
+              unit: pantryItem.unit,
             });
           }
         });
-        btn.textContent = '🍽️ Meal Cooked & Stock Updated';
+        btn.textContent = 'Meal cooked and stock updated';
         (btn as HTMLButtonElement).disabled = true;
+        showToast(`${recipe.title} was recorded and the pantry was updated.`);
       }
     });
   });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Meal ideas could not be generated.';
+    container.innerHTML = `<p class="notice error">${escapeHtml(message)}</p>`;
+  } finally {
+    setButtonBusy(button, false, 'Finding meals');
+  }
 }
 
 // ==========================================
@@ -623,23 +698,31 @@ async function handleSplitBill(e: Event) {
   const titleInput = document.querySelector<HTMLInputElement>('#bill-title-input')!;
   const textInput = document.querySelector<HTMLTextAreaElement>('#bill-text-input')!;
   const resultBox = document.querySelector<HTMLElement>('#bill-split-result')!;
+  const submitButton = document.querySelector<HTMLButtonElement>('#bill-parse-form button[type="submit"]');
 
-  const title = titleInput.value.trim() || 'Shared Bill';
+  const title = titleInput.value.trim();
   const text = textInput.value.trim();
 
   resultBox.style.display = 'block';
-  resultBox.innerHTML = `<p class="empty">⚖️ Agent 3 is categorizing receipt lines and calculating roommate split exemptions…</p>`;
+  resultBox.innerHTML = `<p class="empty">The billing agent is reading receipt lines and applying household rules.</p>`;
+  setButtonBusy(submitButton, true, 'Calculating split');
 
   const roommates = getAllRoommates();
   const rules = HouseholdConfigManager.getRules();
 
-  currentSplitResult = await AgentBilling.parseAndSplitBill(
-    { text, imageBase64: lastUploadedImageBase64, title },
-    roommates,
-    rules
-  );
-
-  renderSplitResult(currentSplitResult);
+  try {
+    currentSplitResult = await AgentBilling.parseAndSplitBill(
+      { text, imageBase64: lastUploadedImageBase64, title },
+      roommates,
+      rules
+    );
+    renderSplitResult(currentSplitResult);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'The receipt could not be processed.';
+    resultBox.innerHTML = `<p class="notice error">${escapeHtml(message)}</p>`;
+  } finally {
+    setButtonBusy(submitButton, false, 'Calculating split');
+  }
 }
 
 function renderSplitResult(res: SplitResult) {
@@ -649,10 +732,10 @@ function renderSplitResult(res: SplitResult) {
     <div class="split-breakdown-card">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
         <div>
-          <h3 style="font-family: var(--font-serif); font-size: 1.25rem; margin: 0;">📊 ${escapeHtml(res.billTitle)}</h3>
+          <h3 style="font-family: var(--font-serif); font-size: 1.25rem; margin: 0;">${escapeHtml(res.billTitle)}</h3>
           <small style="color: var(--text-muted);">Total: ${money(res.totalAmountPaise)} (${res.lineItems.length} items analyzed)</small>
         </div>
-        <button id="btn-save-split-db" class="btn-coral">💾 Record to SpacetimeDB</button>
+        <button id="btn-save-split-db" class="btn-coral">Record expense total</button>
       </div>
 
       <div style="background: white; border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 10px 14px; margin-bottom: 14px;">
@@ -663,7 +746,7 @@ function renderSplitResult(res: SplitResult) {
           <div class="split-line-item">
             <div>
               <strong>${escapeHtml(item.name)}</strong>
-              ${item.excludedRoommates.length > 0 ? `<span class="exempt-label">🌱 ${item.excludedRoommates.length} roommate(s) exempt (diet rule)</span>` : ''}
+              ${item.excludedRoommates.length > 0 ? `<span class="exempt-label">${item.excludedRoommates.length} roommate(s) exempt by household rule</span>` : ''}
             </div>
             <span class="tag-pill tag-${item.category.replace(/_/g, '-')}">${item.category}</span>
             <span style="font-family: var(--font-mono); font-weight: 600;">${money(item.pricePaise)}</span>
@@ -696,13 +779,15 @@ function renderSplitResult(res: SplitResult) {
 
   document.querySelector('#btn-save-split-db')?.addEventListener('click', () => {
     if (!currentSplitResult) return;
+    if (!requireConnection()) return;
     connection.reducers.recordExpense({
       title: currentSplitResult.billTitle,
       amountPaise: currentSplitResult.totalAmountPaise,
     });
     const saveBtn = document.querySelector<HTMLButtonElement>('#btn-save-split-db')!;
-    saveBtn.textContent = '✓ Recorded in SpacetimeDB!';
+    saveBtn.textContent = 'Expense recorded';
     saveBtn.disabled = true;
+    showToast('The expense total was recorded in the shared ledger.');
   });
 }
 
@@ -728,45 +813,48 @@ const dropzone = document.querySelector<HTMLElement>('#bill-dropzone')!;
 const fileInput = document.querySelector<HTMLInputElement>('#bill-file-input')!;
 
 dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('keydown', event => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    fileInput.click();
+  }
+});
+dropzone.addEventListener('dragover', event => {
+  event.preventDefault();
+  dropzone.classList.add('dragging');
+});
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragging'));
+dropzone.addEventListener('drop', event => {
+  event.preventDefault();
+  dropzone.classList.remove('dragging');
+  const file = event.dataTransfer?.files[0];
+  if (file) loadReceiptImage(file);
+});
 fileInput.addEventListener('change', () => {
   const file = fileInput.files?.[0];
+  if (file) loadReceiptImage(file);
+});
+
+function loadReceiptImage(file: File) {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    showToast('Choose a JPG, PNG, or WebP receipt image.', 'error');
+    return;
+  }
+
   if (file) {
     const reader = new FileReader();
     reader.onload = e => {
       lastUploadedImageBase64 = e.target?.result as string;
       dropzone.innerHTML = `
-        <strong style="font-size: 1.1rem; display: block; color: var(--accent-green);">✅ ${escapeHtml(file.name)} Loaded</strong>
-        <span style="color: var(--text-muted); font-size: 0.82rem;">Ready for LangChain OpenAI vision parsing</span>
+        <strong>${escapeHtml(file.name)}</strong>
+        <span>Receipt image ready for analysis. Click to replace it.</span>
       `;
       const titleInput = document.querySelector<HTMLInputElement>('#bill-title-input')!;
       if (!titleInput.value) titleInput.value = file.name.replace(/\.[^.]+$/, '');
     };
     reader.readAsDataURL(file);
   }
-});
-
-// Sample Bills
-document.querySelector('#btn-sample-dinner')?.addEventListener('click', () => {
-  const titleInput = document.querySelector<HTMLInputElement>('#bill-title-input')!;
-  const textInput = document.querySelector<HTMLTextAreaElement>('#bill-text-input')!;
-  titleInput.value = 'Friday Night Dinner (Biryani & Paneer)';
-  textInput.value = `Chicken Biryani (2) - 560
-Paneer Butter Masala - 280
-Garlic Naan (4) - 160
-Craft Beer - 320
-GST & Service Charge - 120`;
-});
-
-document.querySelector('#btn-sample-grocery')?.addEventListener('click', () => {
-  const titleInput = document.querySelector<HTMLInputElement>('#bill-title-input')!;
-  const textInput = document.querySelector<HTMLTextAreaElement>('#bill-text-input')!;
-  titleInput.value = 'Weekly Supermarket Restock';
-  textInput.value = `Basmati Rice 5kg - 450
-Fresh Milk 2L - 130
-Eggs 12-pack - 95
-Dishwashing Soap & Detergent - 220
-Assorted Veggies (Onions, Tomatoes) - 180`;
-});
+}
 
 // Modals
 // OpenAI Config Modal
@@ -789,7 +877,7 @@ document.querySelector('#btn-save-openai-config')?.addEventListener('click', () 
   AIProvider.setConfig(keyInp.value, modelInp.value);
   openaiModal.hidden = true;
   const btn = document.querySelector<HTMLElement>('#btn-openai-config')!;
-  btn.textContent = `⚡ ${AIProvider.hasApiKey() ? 'OpenAI (' + AIProvider.getModelName() + ')' : 'Set OpenAI Key'}`;
+  btn.textContent = AIProvider.hasApiKey() ? `OpenAI: ${AIProvider.getModelName()}` : 'Configure OpenAI';
   refreshShoppingPlan();
   refreshCookingPlan();
 });
@@ -797,8 +885,13 @@ document.querySelector('#btn-save-openai-config')?.addEventListener('click', () 
 // Profile Modal
 const profileDialog = document.querySelector<HTMLElement>('#profile-dialog')!;
 document.querySelector('#btn-my-profile')?.addEventListener('click', () => {
+  if (!requireConnection()) return;
   const roommates = getAllRoommates();
   const me = roommates.find(r => r.identityHex === currentIdentity) || roommates[0];
+  if (!me) {
+    showToast('Your profile is not available yet. Wait for the shared home to finish connecting.', 'error');
+    return;
+  }
   const nameInp = document.querySelector<HTMLInputElement>('#profile-name-input')!;
   const dietInp = document.querySelector<HTMLInputElement>('#profile-diet-input')!;
   const habitsInp = document.querySelector<HTMLInputElement>('#profile-habits-input')!;
@@ -815,21 +908,32 @@ document.querySelector('#btn-close-profile-modal')?.addEventListener('click', ()
 
 document.querySelector('#profile-form')?.addEventListener('submit', e => {
   e.preventDefault();
+  if (!requireConnection()) return;
   const nameInp = document.querySelector<HTMLInputElement>('#profile-name-input')!;
   const dietInp = document.querySelector<HTMLInputElement>('#profile-diet-input')!;
   const habitsInp = document.querySelector<HTMLInputElement>('#profile-habits-input')!;
 
-  const displayName = nameInp.value.trim() || 'Roommate';
+  const displayName = nameInp.value.trim();
   const dietaryTags = dietInp.value.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) as DietaryTag[];
   const cookingHabits = habitsInp.value.split(',').map(s => s.trim()).filter(Boolean);
 
-  const myHex = currentIdentity || '0x_user_you';
+  if (!displayName) {
+    showToast('Add your display name before saving the profile.', 'error');
+    return;
+  }
+
+  const myHex = currentIdentity;
+  const customSplitExclusions = [
+    ...(dietaryTags.some(tag => ['vegetarian', 'vegan', 'jain'].includes(tag)) ? ['non_veg'] : []),
+    ...(dietaryTags.some(tag => ['vegan', 'lactose_intolerant'].includes(tag)) ? ['dairy'] : []),
+    ...(dietaryTags.includes('no_alcohol') ? ['alcohol'] : []),
+  ];
   HouseholdConfigManager.saveProfile({
     identityHex: myHex,
     displayName,
-    dietaryTags: dietaryTags.length > 0 ? dietaryTags : ['vegetarian'],
-    cookingHabits: cookingHabits.length > 0 ? cookingHabits : ['Dal Tadka', 'Pasta'],
-    customSplitExclusions: dietaryTags.includes('vegetarian') ? ['non_veg'] : [],
+    dietaryTags,
+    cookingHabits,
+    customSplitExclusions,
   });
 
   connection.reducers.setDisplayName({ displayName });
@@ -837,11 +941,13 @@ document.querySelector('#profile-form')?.addEventListener('submit', e => {
   renderAll();
   refreshShoppingPlan();
   refreshCookingPlan();
+  showToast('Your household preferences were saved.');
 });
 
 // Add Pantry Modal
 const pantryDialog = document.querySelector<HTMLElement>('#pantry-dialog')!;
 document.querySelector('#btn-open-add-pantry')?.addEventListener('click', () => {
+  if (!requireConnection()) return;
   pantryDialog.hidden = false;
 });
 
@@ -851,6 +957,7 @@ document.querySelector('#btn-close-pantry-modal')?.addEventListener('click', () 
 
 document.querySelector('#pantry-form')?.addEventListener('submit', e => {
   e.preventDefault();
+  if (!requireConnection()) return;
   const nameInp = document.querySelector<HTMLInputElement>('#pantry-item-name')!;
   const qtyInp = document.querySelector<HTMLInputElement>('#pantry-item-qty')!;
   const unitInp = document.querySelector<HTMLInputElement>('#pantry-item-unit')!;
@@ -864,6 +971,7 @@ document.querySelector('#pantry-form')?.addEventListener('submit', e => {
     nameInp.value = '';
     qtyInp.value = '1';
     pantryDialog.hidden = true;
+    showToast(`${name} was added to the pantry.`);
   }
 });
 
@@ -884,22 +992,23 @@ chatClose.addEventListener('click', () => {
 
 document.querySelector('#chat-form')?.addEventListener('submit', e => {
   e.preventDefault();
+  if (!requireConnection()) return;
   const input = document.querySelector<HTMLInputElement>('#chat-input')!;
   const body = input.value.trim();
   if (!body) return;
 
   connection.reducers.addChatMessage({ body, kind: 'user' });
 
-  const pantryMatch = body.match(/(?:i )?(?:bought|brought|got|added)\s+(\d+)\s+(.+?)(?:\s+(?:of|in)\s+([a-z]+))?$/i);
-  const billMatch = body.match(/(.+?)(?:\s+bill)?\s+(?:for\s+)?[₹$]\s*([\d,]+(?:\.\d{1,2})?)/i);
+  const pantryMatch = body.match(/(?:i\s+)?(?:bought|brought|got|added)\s+(\d+)\s*(?:(kg|g|l|ml|packs?|bottles?|items?)\s+(?:of\s+)?)?(.+)$/i);
+  const billMatch = body.match(/(.+?)(?:\s+bill)?\s+(?:for\s+)?(?:₹|rs\.?|inr|\$)\s*([\d,]+(?:\.\d{1,2})?)/i);
 
   if (pantryMatch) {
     const qty = parseInt(pantryMatch[1], 10);
-    const item = pantryMatch[2].trim();
-    const unit = pantryMatch[3] ?? 'items';
+    const unit = pantryMatch[2] ?? 'items';
+    const item = pantryMatch[3].trim();
     connection.reducers.addPantryItem({ name: item, quantity: qty, unit });
     connection.reducers.addChatMessage({
-      body: `🛒 Agent 1 (Shopping): Added ${qty} ${unit} of "${item}" to pantry inventory!`,
+      body: `Shopping agent: added ${qty} ${unit} of ${item} to the pantry.`,
       kind: 'agent',
     });
   } else if (billMatch) {
@@ -907,18 +1016,24 @@ document.querySelector('#chat-form')?.addEventListener('submit', e => {
     const paise = BigInt(Math.round(parseFloat(billMatch[2].replace(/,/g, '')) * 100));
     connection.reducers.recordExpense({ title, amountPaise: paise });
     connection.reducers.addChatMessage({
-      body: `🧾 Agent 3 (Billing): Recorded "${title}" for ${money(paise)} and applied split rules!`,
+      body: `Billing agent: recorded ${title} for ${money(paise)} in the household ledger.`,
       kind: 'agent',
     });
   } else if (/cook|recipe|hungry|dinner|lunch|breakfast/i.test(body)) {
     connection.reducers.addChatMessage({
-      body: `🍳 Agent 2 (Cooking): Checking pantry inventory & dietary configs... Switched recipes updated!`,
+      body: 'Cooking agent: meal ideas have been refreshed from the current pantry and household preferences.',
       kind: 'agent',
     });
     refreshCookingPlan();
+  } else if (/shop|restock|grocery|groceries/i.test(body)) {
+    connection.reducers.addChatMessage({
+      body: 'Shopping agent: the restock plan has been refreshed from current pantry levels.',
+      kind: 'agent',
+    });
+    refreshShoppingPlan();
   } else {
     connection.reducers.addChatMessage({
-      body: `Noted! Try: “I bought 2kg rice”, “Electricity bill ₹1200”, or “What can we cook?”`,
+      body: 'I can record pantry purchases and expenses, refresh the shopping plan, or find meals from the current pantry.',
       kind: 'system',
     });
   }

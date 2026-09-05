@@ -6,8 +6,8 @@ export interface RoommateProfile {
   identityHex: string;
   displayName: string;
   dietaryTags: DietaryTag[];
-  cookingHabits: string[]; // e.g. ["Paneer Butter Masala", "Pasta Carbonara", "Avocado Toast", "Chicken Biryani"]
-  customSplitExclusions: string[]; // categories excluded from: e.g. ['non_veg', 'alcohol', 'dairy']
+  cookingHabits: string[];
+  customSplitExclusions: string[];
 }
 
 export interface SplitRule {
@@ -67,9 +67,9 @@ export class HouseholdConfigManager {
     return {
       identityHex,
       displayName: fallbackName,
-      dietaryTags: ['vegetarian'],
-      cookingHabits: ['Dal Tadka', 'Pasta', 'Fried Rice', 'Poha'],
-      customSplitExclusions: ['non_veg'],
+      dietaryTags: [],
+      cookingHabits: [],
+      customSplitExclusions: [],
     };
   }
 

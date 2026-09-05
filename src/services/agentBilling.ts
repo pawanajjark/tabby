@@ -31,7 +31,7 @@ export interface SplitResult {
 
 export class AgentBilling {
   /**
-   * Agent 3: Parses bill images/PDF/text and calculates fair splits based on household rules.
+   * Agent 3: Parses receipt images or text and calculates fair splits based on household rules.
    */
   static async parseAndSplitBill(
     input: { text?: string; imageBase64?: string; title?: string },
@@ -39,7 +39,15 @@ export class AgentBilling {
     rules: SplitRule[] = HouseholdConfigManager.getRules()
   ): Promise<SplitResult> {
     const rawText = input.text?.trim() || '';
-    const title = input.title?.trim() || 'Household Bill';
+    const title = input.title?.trim() || 'Household expense';
+
+    if (!rawText && !input.imageBase64) {
+      throw new Error('Add receipt text or upload a receipt image before calculating the split.');
+    }
+
+    if (input.imageBase64 && !AIProvider.hasApiKey() && !rawText) {
+      throw new Error('Receipt image analysis requires an OpenAI API key. Add a key or paste the receipt items as text.');
+    }
 
     // 1. Try multimodal / LLM receipt parsing if available
     if (AIProvider.hasApiKey() && (input.imageBase64 || rawText)) {
@@ -75,10 +83,17 @@ Return a valid JSON object with:
         items: Array<{ name: string; priceRupees: number; category: ItemCategory }>;
       }>(prompt, 'You are an accurate billing and receipt parsing agent.', input.imageBase64);
 
-      if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
+      const validItems = parsed?.items?.filter(item =>
+        typeof item.name === 'string' &&
+        item.name.trim().length > 0 &&
+        Number.isFinite(item.priceRupees) &&
+        item.priceRupees > 0
+      );
+
+      if (parsed && validItems && validItems.length > 0) {
         return this.calculateSplits(
           parsed.title || title,
-          parsed.items.map((it, idx) => ({
+          validItems.map((it, idx) => ({
             id: `item_${idx + 1}`,
             name: it.name,
             pricePaise: BigInt(Math.round(it.priceRupees * 100)),
@@ -91,7 +106,11 @@ Return a valid JSON object with:
       }
     }
 
-    // 2. Fallback Heuristic Text Parser
+    if (!rawText) {
+      throw new Error('The receipt image could not be read. Paste the receipt items as text and try again.');
+    }
+
+    // 2. Deterministic text parser
     const heuristicItems = this.parseRawReceiptText(rawText);
     return this.calculateSplits(
       title,
@@ -205,13 +224,17 @@ Return a valid JSON object with:
     const finalTotalPaise = itemsTotalPaise + taxOrDiscountPaise;
 
     // Distribute tax / service charge proportionally according to item consumption
-    const roommateShares = roommates.map(rm => {
+    let distributedAdjustment = 0n;
+    const roommateShares = roommates.map((rm, index) => {
       const rawCost = roommateItemCosts[rm.identityHex] || 0n;
       let finalCost = rawCost;
 
       if (itemsTotalPaise > 0n && taxOrDiscountPaise !== 0n) {
-        // Proportional tax/discount share
-        const taxShare = (taxOrDiscountPaise * rawCost) / itemsTotalPaise;
+        const isLastRoommate = index === roommates.length - 1;
+        const taxShare = isLastRoommate
+          ? taxOrDiscountPaise - distributedAdjustment
+          : (taxOrDiscountPaise * rawCost) / itemsTotalPaise;
+        distributedAdjustment += taxShare;
         finalCost += taxShare;
       }
 
@@ -287,15 +310,7 @@ Return a valid JSON object with:
     }
 
     if (items.length === 0) {
-      // Default fallback item if single lump sum
-      const numMatch = rawText.match(/([\d,]+(?:\.\d{1,2})?)/);
-      const amt = numMatch ? parseFloat(numMatch[1].replace(/,/g, '')) : 500;
-      items.push({
-        id: 'item_1',
-        name: rawText.slice(0, 30) || 'General Household Grocery',
-        pricePaise: BigInt(Math.round(amt * 100)),
-        category: 'veg',
-      });
+      throw new Error('No priced receipt lines were found. Use one item per line, such as "Rice - 450".');
     }
 
     return { items, taxOrDiscountPaise };

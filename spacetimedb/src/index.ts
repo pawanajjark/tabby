@@ -6,8 +6,6 @@ const spacetimedb = schema({
     {
       identity: t.identity().primaryKey(),
       display_name: t.string(),
-      dietary_tags: t.string(), // comma-separated or JSON e.g. "vegetarian,no_beef"
-      cooking_habits: t.string(), // comma-separated favorite meals e.g. "pasta,dal,curry"
     },
   ),
   pantry_item: table(
@@ -17,7 +15,6 @@ const spacetimedb = schema({
       name: t.string().index('btree'),
       quantity: t.i32(),
       unit: t.string(),
-      category: t.string(),
       updated_by: t.identity(),
     },
   ),
@@ -56,13 +53,15 @@ const spacetimedb = schema({
 
 export default spacetimedb;
 
+function defaultMemberName(identityHex: string) {
+  return `Household member ${identityHex.slice(0, 6)}`;
+}
+
 export const on_connect = spacetimedb.clientConnected(ctx => {
   if (ctx.db.member.identity.find(ctx.sender) === null) {
     ctx.db.member.insert({
       identity: ctx.sender,
-      display_name: 'Roommate',
-      dietary_tags: 'vegetarian',
-      cooking_habits: 'dal tadka, pasta, stir fry',
+      display_name: defaultMemberName(ctx.sender.toHexString()),
     });
   }
 });
@@ -79,39 +78,14 @@ export const set_display_name = spacetimedb.reducer(
       ctx.db.member.insert({
         identity: ctx.sender,
         display_name: name,
-        dietary_tags: 'vegetarian',
-        cooking_habits: 'dal tadka, pasta, stir fry',
-      });
-    }
-  },
-);
-
-export const update_member_profile = spacetimedb.reducer(
-  { display_name: t.string(), dietary_tags: t.string(), cooking_habits: t.string() },
-  (ctx, { display_name, dietary_tags, cooking_habits }) => {
-    const name = display_name.trim() || 'Roommate';
-    const member = ctx.db.member.identity.find(ctx.sender);
-    if (member) {
-      ctx.db.member.identity.update({
-        ...member,
-        display_name: name,
-        dietary_tags: dietary_tags.trim(),
-        cooking_habits: cooking_habits.trim(),
-      });
-    } else {
-      ctx.db.member.insert({
-        identity: ctx.sender,
-        display_name: name,
-        dietary_tags: dietary_tags.trim(),
-        cooking_habits: cooking_habits.trim(),
       });
     }
   },
 );
 
 export const add_pantry_item = spacetimedb.reducer(
-  { name: t.string(), quantity: t.i32(), unit: t.string(), category: t.string() },
-  (ctx, { name, quantity, unit, category }) => {
+  { name: t.string(), quantity: t.i32(), unit: t.string() },
+  (ctx, { name, quantity, unit }) => {
     const cleanName = name.trim().toLowerCase();
     if (!cleanName || quantity === 0) throw new Error('Add an item and a non-zero quantity.');
     const existing = [...ctx.db.pantry_item.name.filter(cleanName)][0];
@@ -120,7 +94,6 @@ export const add_pantry_item = spacetimedb.reducer(
         ...existing,
         quantity: Math.max(0, existing.quantity + quantity),
         unit: unit.trim() || existing.unit,
-        category: category?.trim() || existing.category || 'general',
         updated_by: ctx.sender,
       });
     } else {
@@ -129,23 +102,6 @@ export const add_pantry_item = spacetimedb.reducer(
         name: cleanName,
         quantity: Math.max(0, quantity),
         unit: unit.trim() || 'items',
-        category: category?.trim() || 'general',
-        updated_by: ctx.sender,
-      });
-    }
-  },
-);
-
-export const consume_pantry_item = spacetimedb.reducer(
-  { name: t.string(), quantity: t.i32() },
-  (ctx, { name, quantity }) => {
-    const cleanName = name.trim().toLowerCase();
-    const existing = [...ctx.db.pantry_item.name.filter(cleanName)][0];
-    if (existing) {
-      const newQty = Math.max(0, existing.quantity - quantity);
-      ctx.db.pantry_item.id.update({
-        ...existing,
-        quantity: newQty,
         updated_by: ctx.sender,
       });
     }

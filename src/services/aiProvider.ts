@@ -2,9 +2,13 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 
+const savedModelName = localStorage.getItem('tabby_openai_model');
+const requestedModelName = savedModelName || import.meta.env.VITE_OPENAI_MODEL || '';
+const configuredModelName = requestedModelName === 'gpt-5.6-sol' ? 'gpt-4.1-mini' : requestedModelName;
+
 export class AIProvider {
   private static apiKey = localStorage.getItem('tabby_openai_api_key') || import.meta.env.VITE_OPENAI_API_KEY || '';
-  private static modelName = localStorage.getItem('tabby_openai_model') || import.meta.env.VITE_OPENAI_MODEL || 'gpt-5.6-sol';
+  private static modelName = configuredModelName || 'gpt-4.1-mini';
 
   static setConfig(apiKey: string, modelName?: string) {
     this.apiKey = apiKey.trim();

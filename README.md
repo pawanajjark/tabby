@@ -1,12 +1,12 @@
 # Tabby
 
-Tabby is a shared, live memory for a flat. Roommates chat to record pantry purchases and bills; every connected browser immediately receives the same updated household state.
+Tabby is a shared household workspace. Three focused agents turn live pantry data and roommate preferences into restock plans, meal suggestions, and fair itemized expense splits.
 
 ## How SpacetimeDB powers Tabby
 
 SpacetimeDB is the only shared backend. Its public tables (`member`, `pantry_item`, `expense`, `expense_split`, and `chat_message`) are subscribed to by every browser. Reducers are transactional commands: a pantry update or an expense plus all of its splits either succeeds together or changes nothing.
 
-The browser currently uses regex to recognize a few chat messages and calls the relevant reducer. This deliberately keeps the future AI-agent boundary simple: an LLM can later produce the same structured actions without changing the tables or business rules.
+The shopping and cooking agents work with a deterministic local planning engine and can use OpenAI for generated recommendations when configured. The billing agent parses itemized text without an API key and uses OpenAI vision for receipt images. Chat routes supported household requests to the same underlying actions.
 
 ## Run Tabby
 
@@ -19,9 +19,12 @@ Open the Vite address shown in the terminal. By default it connects to the cloud
 
 For local backend work instead, run `spacetime start`, use `spacetime dev tabby --server local --yes` to rebuild/publish/regenerate bindings, and set `VITE_SPACETIMEDB_URI=ws://localhost:3000` for the frontend.
 
-## First regex commands
+## Chat commands
 
 - `I bought 10 eggs`
-- `Electricity bill ₹2400`
+- `I bought 2 kg rice`
+- `Electricity bill INR 2400`
+- `What can we cook?`
+- `Refresh the shopping plan`
 
-Before recording expenses, each roommate needs a display name. The initial UI will add this next; the current backend reducer is already available as `setDisplayName`.
+Open **My profile** to add dietary preferences and cooking habits. Receipt text should contain one priced item per line, for example `Rice - 450`.
