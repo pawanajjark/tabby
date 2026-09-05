@@ -7,6 +7,7 @@ import { AIProvider } from './services/aiProvider';
 import { AuthManager, type AuthUser } from './services/authManager';
 import { ResidenceManager, type ResidenceItem, type FlatItem, type ActiveFlatSelection } from './services/residenceManager';
 import { peopleListPresentation, selectFlatRoommates } from './services/roommateList';
+import { createSubscriptionGroups } from './services/subscriptionPlan';
 import {
   HouseholdConfigManager,
   type DietaryTag,
@@ -282,6 +283,7 @@ let currentIdentity = '';
 let isConnected = false;
 let isConnecting = true;
 let isDatabaseSynchronized = false;
+let isPeopleSynchronized = false;
 let attachedReceipt: string | undefined;
 let attachedReceiptName = '';
 let routeIntent: AgentIntent | 'idle' = 'idle';
@@ -765,7 +767,7 @@ function clearAllTabbyData() {
 
 function renderContextPanel() {
   const roommates = getRoommates();
-  const peoplePresentation = peopleListPresentation(isDatabaseSynchronized, roommates.length);
+  const peoplePresentation = peopleListPresentation(isPeopleSynchronized, roommates.length);
   const memory = getSharedContext();
   const pantry = pantryData().filter(item => item.quantity > 0).sort((a, b) => a.name.localeCompare(b.name));
   const rules = flatRulesData();
@@ -1207,6 +1209,7 @@ function scheduleDatabaseReconnect(generation: number) {
   isConnected = false;
   isConnecting = true;
   isDatabaseSynchronized = false;
+  isPeopleSynchronized = false;
   const delay = Math.min(
     DATABASE_RECONNECT_BASE_DELAY_MS * 2 ** reconnectAttempt,
     DATABASE_RECONNECT_MAX_DELAY_MS,
@@ -1237,6 +1240,7 @@ function connectToDatabase() {
   connectionAttemptInFlight = true;
   isConnecting = true;
   isDatabaseSynchronized = false;
+  isPeopleSynchronized = false;
 
   const nextConnection = DbConnection.builder()
     .withUri(host)
@@ -1253,14 +1257,30 @@ function connectToDatabase() {
       isConnecting = false;
       isConnected = true;
       isDatabaseSynchronized = false;
+      isPeopleSynchronized = false;
       renderAll();
+
+      const [peopleSubscription, householdSubscription] = createSubscriptionGroups(
+        tables.member,
+        [
+          tables.residence,
+          tables.flat,
+          tables.flatRule,
+          tables.pantryItem,
+          tables.expense,
+          tables.expenseSplit,
+          tables.sharedMemory,
+          tables.myConversations,
+          tables.myConversationMessages,
+          tables.myAiStatus,
+        ],
+      );
 
       ctx.subscriptionBuilder()
         .onApplied(() => {
           if (generation !== connectionGeneration) return;
 
-          reconnectAttempt = 0;
-          isDatabaseSynchronized = true;
+          isPeopleSynchronized = true;
           const user = AuthManager.getCurrentUser();
           const isJoined = [...ctx.db.member.iter()]
             .some(member => member.identity.toHexString() === currentIdentity);
@@ -1271,6 +1291,27 @@ function connectToDatabase() {
               console.warn('Syncing displayName to SpacetimeDB:', error);
             }
           }
+          renderAll();
+        })
+        .onError(errorContext => {
+          if (generation !== connectionGeneration) return;
+
+          console.warn('SpacetimeDB people subscription error:', errorContext.event);
+          isPeopleSynchronized = false;
+          isDatabaseSynchronized = false;
+          isConnected = false;
+          connectionAttemptInFlight = false;
+          errorContext.disconnect();
+          scheduleDatabaseReconnect(generation);
+        })
+        .subscribe(peopleSubscription.tables[0]);
+
+      ctx.subscriptionBuilder()
+        .onApplied(() => {
+          if (generation !== connectionGeneration) return;
+
+          reconnectAttempt = 0;
+          isDatabaseSynchronized = true;
           try {
             ResidenceManager.syncFromDb(
               [...ctx.db.residence.iter()],
@@ -1288,31 +1329,21 @@ function connectToDatabase() {
           if (generation !== connectionGeneration) return;
 
           console.warn('SpacetimeDB subscription error:', errorContext.event);
+          isPeopleSynchronized = false;
           isDatabaseSynchronized = false;
           isConnected = false;
           connectionAttemptInFlight = false;
           errorContext.disconnect();
           scheduleDatabaseReconnect(generation);
         })
-        .subscribe([
-          tables.residence,
-          tables.flat,
-          tables.flatRule,
-          tables.member,
-          tables.pantryItem,
-          tables.expense,
-          tables.expenseSplit,
-          tables.sharedMemory,
-          tables.myConversations,
-          tables.myConversationMessages,
-          tables.myAiStatus,
-        ]);
+        .subscribe(householdSubscription.tables);
     })
     .onConnectError((_ctx, error) => {
       if (generation !== connectionGeneration) return;
 
       connectionAttemptInFlight = false;
       isConnected = false;
+      isPeopleSynchronized = false;
       console.warn('SpacetimeDB connection error:', error);
       scheduleDatabaseReconnect(generation);
     })
@@ -1322,6 +1353,7 @@ function connectToDatabase() {
       connectionAttemptInFlight = false;
       isConnected = false;
       isDatabaseSynchronized = false;
+      isPeopleSynchronized = false;
       if (error) console.warn('SpacetimeDB disconnected:', error);
       scheduleDatabaseReconnect(generation);
     })

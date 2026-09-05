@@ -11,10 +11,10 @@ export interface PeopleListPresentation {
 }
 
 export function peopleListPresentation(
-  isDatabaseSynchronized: boolean,
+  isPeopleSynchronized: boolean,
   count: number,
 ): PeopleListPresentation {
-  if (!isDatabaseSynchronized) {
+  if (!isPeopleSynchronized) {
     return {
       countLabel: '—',
       emptyMessage: 'Loading people…',
