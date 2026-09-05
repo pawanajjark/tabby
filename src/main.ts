@@ -804,18 +804,18 @@ function ensureConversation() {
 
 const EMPTY_CONVERSATION_STARTERS = [
   {
-    label: 'What should we restock this week?',
-    prompt: 'What should we restock this week?',
+    label: 'I bought milk and eggs',
+    prompt: 'I bought milk and eggs',
     icon: '<path d="M4 10h16l-2 9H6l-2-9Zm4 0 4-6 4 6M9 14v2m3-2v2m3-2v2"/>',
   },
   {
-    label: 'What can we cook with what’s here?',
-    prompt: 'What can we cook with what’s here?',
+    label: 'What can we cook tonight?',
+    prompt: 'What can we cook tonight?',
     icon: '<path d="M6 3v6a3 3 0 0 0 3 3V3m-3 4h3m6-4v18m0-18c3 2 4 5 4 8h-4"/>',
   },
   {
-    label: 'Split this bill fairly.',
-    prompt: 'Help me review and split a bill fairly.',
+    label: 'Split ₹900 for electricity',
+    prompt: 'Split ₹900 for electricity',
     icon: '<path d="M6 3h12v18l-2-1-2 1-2-1-2 1-2-1-2 1V3Zm3 5h6m-6 4h6m-6 4h4"/>',
   },
 ] as const;
@@ -835,11 +835,8 @@ function renderEmptyConversationHome(): string {
 function bindEmptyConversationStarters() {
   document.querySelectorAll<HTMLButtonElement>('[data-empty-prompt]').forEach(button => {
     button.addEventListener('click', () => {
-      const composer = document.querySelector<HTMLTextAreaElement>('#chat-input');
-      if (!composer) return;
-      composer.value = button.dataset.emptyPrompt || '';
-      composer.dispatchEvent(new Event('input', { bubbles: true }));
-      composer.focus();
+      button.disabled = true;
+      sendComposerMessage(button.dataset.emptyPrompt || '');
     });
   });
 }
@@ -2748,14 +2745,20 @@ async function retryMessage(commandKey: string) {
   await flushActiveOutbox();
 }
 
-document.querySelector<HTMLFormElement>('#chat-form')!.addEventListener('submit', event => {
-  event.preventDefault();
+function sendComposerMessage(value: string): boolean {
+  const text = value.trim();
+  if (!text) return false;
   const input = document.querySelector<HTMLTextAreaElement>('#chat-input')!;
-  const text = input.value.trim();
-  if (!text) return;
   input.value = '';
   input.style.height = '';
   void sendUserMessage(text);
+  return true;
+}
+
+document.querySelector<HTMLFormElement>('#chat-form')!.addEventListener('submit', event => {
+  event.preventDefault();
+  const input = document.querySelector<HTMLTextAreaElement>('#chat-input')!;
+  sendComposerMessage(input.value);
 });
 
 document.querySelector<HTMLTextAreaElement>('#chat-input')!.addEventListener('input', event => {

@@ -230,6 +230,23 @@ test('shared controls are unavailable with a clear no-home reason', () => {
   });
 });
 
+test('empty conversation examples send immediately instead of only filling the composer', () => {
+  const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+  const startersStart = mainSource.indexOf('const EMPTY_CONVERSATION_STARTERS');
+  const startersEnd = mainSource.indexOf('\nfunction renderEmptyConversationHome()', startersStart);
+  const bindStart = mainSource.indexOf('function bindEmptyConversationStarters()');
+  const bindEnd = mainSource.indexOf('\nfunction renderConversation()', bindStart);
+  const sendStart = mainSource.indexOf('function sendComposerMessage(');
+  const sendEnd = mainSource.indexOf("\ndocument.querySelector<HTMLFormElement>('#chat-form')", sendStart);
+
+  assert.match(mainSource.slice(startersStart, startersEnd), /I bought milk and eggs/);
+  assert.match(mainSource.slice(startersStart, startersEnd), /Split ₹900 for electricity/);
+  assert.match(mainSource.slice(startersStart, startersEnd), /What can we cook tonight\?/);
+  assert.match(mainSource.slice(bindStart, bindEnd), /sendComposerMessage\(button\.dataset\.emptyPrompt/);
+  assert.doesNotMatch(mainSource.slice(bindStart, bindEnd), /composer\.focus\(\)/);
+  assert.match(mainSource.slice(sendStart, sendEnd), /void sendUserMessage\(text\)/);
+});
+
 test('chat work rejects with a useful error when its deadline expires', async () => {
   const settleWithin = (actionCoordinator as unknown as {
     settleWithin?: <T>(promise: Promise<T>, timeoutMs: number, message: string) => Promise<T>;
