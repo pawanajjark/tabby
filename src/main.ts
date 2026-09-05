@@ -1,11 +1,86 @@
 import './style.css';
 import { DbConnection, tables } from './module_bindings';
+import { AppStore, type AppRoute } from './app/store';
+import { installRouteNavigation, reflectRoute, routeNavigation } from './app/routeShell';
+import { createHouseholdGateway, householdSubscriptionTables } from './data/householdGateway';
+import { identityBackRoute, renderIdentityFlow } from './app/identityFlowView';
+import { installDrawerController } from './shared/drawer';
+import { ActionCoordinator } from './services/actionCoordinator';
+import { PersistentOutbox, type OutboxCommand } from './services/outbox';
+import {
+  ConversationDeliveryStore,
+  createConversationState,
+  emptyHomeStarterSuggestions,
+  pendingRoutePresentation,
+  reduceConversationState,
+  renderConversationRoute,
+  type ConversationFeatureState,
+  type ConversationRecord,
+  type ConversationRoutePresentation,
+} from './features/conversations';
+import {
+  completeReminderAction,
+  assignBillLine,
+  billAllocationActions,
+  billAllocationsAcknowledged,
+  billLineActions,
+  billLinesAcknowledged,
+  billRecordingAcknowledged,
+  billRecordRejected,
+  billReviewAcknowledged,
+  confirmCookingActions,
+  cookingAcknowledged,
+  createCookingConfirmation,
+  createBillReviewAction,
+  createReminderAction,
+  pantryViewItems,
+  reminderViews,
+  renderCookingConfirmation,
+  renderBillReview,
+  renderHomeShelfSummary,
+  renderPantryRoute as renderRichPantryRoute,
+  renderReminderShelf,
+  recordReviewedBillAction,
+  scheduleDeletion,
+  setBillDate,
+  setBillPayer,
+  startBillRecord,
+  undoDeletion,
+  deletionActionWhenDue,
+  type BillDraft,
+  type BillRecordPhase,
+  type CookingConfirmation,
+  type DeletableHouseholdRow,
+  type PendingDeletion,
+  type PantryFilters,
+} from './features/household';
+import {
+  beginRecovery,
+  connectAi,
+  createHome,
+  createIdentityState,
+  createInvitation,
+  createSpacetimeIdentityPorts,
+  deleteAccount,
+  disconnectAi as disconnectIdentityAi,
+  joinHome,
+  lookupInvitation,
+  saveFirstTask,
+  saveHomeBasics,
+  saveProfile,
+  signOut,
+  switchAccount,
+  switchHome,
+  type IdentityFeatureState,
+  type IdentityPorts,
+  type IdentityRoute,
+} from './features/identity';
 import { AgentShopping } from './services/agentShopping';
 import { AgentCooking, type Recipe } from './services/agentCooking';
 import { AgentBilling, type SplitResult } from './services/agentBilling';
 import { AIProvider } from './services/aiProvider';
 import { AuthManager, type AuthUser } from './services/authManager';
-import { ResidenceManager, type ResidenceItem, type FlatItem, type ActiveFlatSelection } from './services/residenceManager';
+import type { ActiveFlatSelection } from './services/residenceManager';
 import { peopleListPresentation, selectFlatRoommates } from './services/roommateList';
 import { createSubscriptionGroups } from './services/subscriptionPlan';
 import {
@@ -29,12 +104,20 @@ interface ConversationMessage {
   text?: string;
   contentHtml?: string;
   pending?: boolean;
+  progressLabel?: string;
+  delivery?: 'sending' | 'unsent' | 'rejected' | 'sent';
+  commandKey?: string;
+  routes?: ConversationRoutePresentation[];
 }
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 
 app.innerHTML = `
   <main class="app-frame household-workspace">
+    <div class="offline-banner" id="offline-banner" role="status" aria-live="polite" hidden>
+      <span><strong>Offline.</strong> Private messages stay on this device. Shared actions are unavailable until Tabby reconnects.</span>
+      <button type="button" id="retry-connection">Retry connection</button>
+    </div>
     <header class="command-rail top-bar" aria-label="Tabby household workspace">
       <div class="brand-block top-bar-brand">
         <div class="wordmark">tabby</div>
@@ -45,10 +128,10 @@ app.innerHTML = `
         <button type="button" class="header-pill-badge home-switcher-button rail-card-header" id="header-flat-badge" title="Choose a home">
           <span class="rail-label">HOME</span>
           <span class="home-switcher-copy rail-card-title">
-            <span class="rail-card-name" id="rail-flat-name">Sunshine Haven</span>
-            <span class="rail-card-sub" id="rail-residence-name">Flat 402, Palm Grove Residency</span>
+            <span class="rail-card-name" id="rail-flat-name">Choose a home</span>
+            <span class="rail-card-sub" id="rail-residence-name">No shared home selected</span>
           </span>
-          <span class="sr-only" id="header-flat-text">Sunshine Haven · Flat 402</span>
+          <span class="sr-only" id="header-flat-text">No shared home selected</span>
         </button>
       </div>
 
@@ -57,10 +140,8 @@ app.innerHTML = `
         <p class="connection-status"><span class="status-dot offline"></span><span id="status-text">Pantry is connecting</span></p>
       </div>
 
-      <nav class="routing-guide top-bar-navigation" aria-label="Primary navigation">
-        <span class="top-bar-link active" aria-current="page">Conversations</span>
-        <button type="button" class="context-toggle top-bar-link" id="context-toggle" aria-expanded="false" aria-controls="context-panel"><span class="context-long">Home shelf</span><span class="context-short">Shelf</span></button>
-      </nav>
+      ${routeNavigation('desktop-route-nav')}
+      <button type="button" class="context-toggle top-bar-link" id="context-toggle" aria-expanded="false" aria-controls="context-panel"><span class="context-long">Home shelf</span><span class="context-short">Shelf</span></button>
 
       <div class="rail-card account-switcher" id="rail-user-card">
         <button type="button" class="header-pill-badge user-pill account-switcher-button rail-card-header" id="header-user-badge" title="Switch account">
@@ -76,7 +157,7 @@ app.innerHTML = `
       <button type="button" class="quiet-button settings-trigger rail-card-btn" id="open-ai-settings">Settings</button>
     </header>
 
-    <section class="conversation-shell">
+    <section class="conversation-shell" data-route-view="conversations">
       <header class="conversation-header conversation-toolbar">
         <div class="conversation-title-group">
           <p class="conversation-picker-label">PRIVATE TO YOU</p>
@@ -93,9 +174,14 @@ app.innerHTML = `
         </div>
       </header>
 
-      <div class="conversation conversation-transcript" id="conversation" aria-live="polite"></div>
+      <div class="conversation-workspace">
+        <div id="conversation-feature-mount" class="conversation-feature-mount"></div>
+        <div class="conversation-live-detail">
+          <div class="conversation conversation-transcript" id="conversation" aria-live="polite"></div>
+        </div>
+      </div>
 
-      <div class="composer-zone">
+      <div class="composer-zone conversation-composer-zone">
         <form class="composer" id="chat-form">
           <label class="sr-only" for="chat-input">Message Tabby</label>
           <textarea id="chat-input" rows="1" maxlength="3000" placeholder="Message Tabby" required></textarea>
@@ -112,6 +198,21 @@ app.innerHTML = `
       </div>
     </section>
 
+    <section class="route-page pantry-page" data-route-view="pantry" hidden>
+      <header class="route-page-header">
+        <div><p class="eyebrow">SHARED PANTRY</p><h1>Pantry</h1><p>Current items from this home. Shared changes require a connection.</p></div>
+        <label class="pantry-search">Search pantry<input id="pantry-search" type="search" placeholder="Search items" /></label>
+      </header>
+      <div id="pantry-route-content" class="pantry-route-content" aria-live="polite">
+        <div class="skeleton-list" aria-label="Loading pantry"><span></span><span></span><span></span></div>
+      </div>
+    </section>
+
+    <section class="route-page home-page" data-route-view="home" hidden>
+      <header class="route-page-header"><div><p class="eyebrow">SHARED HOME</p><h1>Home</h1><p>People, notes, pantry, and agreements live on the Home shelf.</p></div></header>
+      <div class="route-empty"><h2>Your shared home at a glance</h2><p>Use the Home shelf to review live household details. Nothing is filled with sample data.</p><button type="button" id="open-home-shelf" class="primary-button">Open Home shelf</button></div>
+    </section>
+
     <aside class="context-panel home-shelf" id="context-panel" aria-label="Home shelf">
       <div class="context-header">
         <div>
@@ -120,6 +221,7 @@ app.innerHTML = `
         </div>
         <button class="context-close" id="context-close" aria-label="Close Home shelf">Close</button>
       </div>
+      <p class="shelf-offline" id="shelf-offline" hidden>Shared actions are unavailable while offline. You can still read the last synchronized shelf.</p>
       <div class="mobile-context-actions">
         <button id="mobile-new-conversation">New conversation</button>
         <button id="mobile-onboard">Switch home</button>
@@ -156,8 +258,27 @@ app.innerHTML = `
         </form>
         <div id="rules-list" class="context-list"></div>
       </section>
+      <div id="shelf-summary-mount" class="shelf-summary-mount"></div>
+      <section class="context-section reminder-compose">
+        <div class="section-heading"><h3>REMINDERS</h3></div>
+        <form id="quick-reminder-form" class="quick-reminder-form">
+          <input id="quick-reminder-title" placeholder="Add a reminder" autocomplete="off" required />
+          <input id="quick-reminder-due" type="datetime-local" required />
+          <button type="submit" class="quick-add-btn" data-shared-action>Add</button>
+        </form>
+        <div id="reminder-shelf-mount"></div>
+      </section>
+      <div id="bill-review-mount" class="bill-review-mount"></div>
     </aside>
+    <button type="button" class="drawer-scrim" id="drawer-scrim" aria-label="Close Home shelf" hidden></button>
   </main>
+
+  ${routeNavigation('mobile-bottom-nav')}
+
+  <section id="identity-flow" class="identity-flow" role="dialog" aria-modal="true" aria-label="Tabby setup and settings" hidden>
+    <button type="button" class="identity-flow-close" id="identity-flow-close" aria-label="Close setup">Close</button>
+    <div id="identity-flow-mount" class="identity-flow-mount"></div>
+  </section>
 
   <dialog id="login-dialog" class="onboarding-dialog welcome-screen">
     <form id="login-form" class="settings-form onboarding-screen">
@@ -171,7 +292,6 @@ app.innerHTML = `
       </div>
       <p class="returning-user-copy">Returning to Tabby? Sign in below.</p>
       <div class="onboarding-section-heading"><span>PRIVATE SETUP</span><strong>Your profile</strong></div>
-      <button type="button" id="fill-sam-demo" class="quick-demo-btn">Use Sam demo details</button>
       <label>Name<input id="login-name" placeholder="Your name" required /></label>
       <label>Phone number<input id="login-phone" placeholder="+91 98765 43210" required /></label>
       <p class="privacy-note">Your conversations stay private. Only items you explicitly save appear in the Home shelf.</p>
@@ -317,7 +437,33 @@ let attachedReceiptName = '';
 let routeIntent: AgentIntent | 'idle' = 'idle';
 let currentRecipes = new Map<string, Recipe>();
 let currentSplit: SplitResult | null = null;
+let currentBillDraft: BillDraft | null = null;
+let currentBillPhase: BillRecordPhase = { step: 'editing', acknowledgement: { status: 'idle' } };
 let syncingConversation = false;
+let conversationFeatureState: ConversationFeatureState = createConversationState();
+let pantryFilters: PantryFilters = { stockState: 'all' };
+let cookingConfirmation: CookingConfirmation | null = null;
+let identityState: IdentityFeatureState = createIdentityState('welcome');
+let requestedHomePath: 'create' | 'join' | null = null;
+let identityReturnFocus: HTMLElement | null = null;
+let identityCompletionVisible = false;
+let editingExistingHomeBasics = false;
+let lastAiConnectionError: { model: string; message: string } | null = null;
+let manualInvitation: { link: string; identity: string; homeId: string } | null = null;
+const outboxes = new Map<string, PersistentOutbox>();
+const pendingDeletions = new Map<string, PendingDeletion>();
+const pendingDeletionHomes = new Map<string, string>();
+const pendingDeletionTimers = new Map<string, number>();
+
+const FIRST_TASK_STARTERS = [
+  { id: 'starter-milk', label: 'Milk', selected: false },
+  { id: 'starter-eggs', label: 'Eggs', selected: false },
+  { id: 'starter-rice', label: 'Rice', selected: false },
+  { id: 'starter-cooking-oil', label: 'Cooking oil', selected: false },
+] as const;
+
+const appStore = new AppStore({ route: 'conversations', connectivity: 'connecting', synchronized: false });
+const commandCoordinator = new ActionCoordinator(() => isConnected && navigator.onLine !== false);
 
 const welcomeMessage: ConversationMessage = {
   id: 'welcome',
@@ -325,6 +471,27 @@ const welcomeMessage: ConversationMessage = {
   agent: 'tabby',
   text: 'Run your home from one conversation. Tell me what needs handling, from a pantry check or dinner to a bill or Home note.',
 };
+
+const emptyHomeSelection: ActiveFlatSelection = {
+  residenceId: '', residenceName: '', flatId: '', flatName: '', flatNumber: '',
+};
+
+function activeHomeSelection(): ActiveFlatSelection {
+  if (!connection || !currentIdentity) return emptyHomeSelection;
+  const membership = householdGateway.homeMemberships()
+    .find(row => row.identity.toHexString() === currentIdentity && row.active);
+  if (!membership) return emptyHomeSelection;
+  const home = householdGateway.homes().find(row => row.id === membership.flatId);
+  if (!home) return emptyHomeSelection;
+  const residence = householdGateway.residences().find(row => row.id === home.residenceId);
+  return {
+    residenceId: String(home.residenceId),
+    residenceName: residence?.name ?? '',
+    flatId: String(home.id),
+    flatName: home.name,
+    flatNumber: home.flatNumber,
+  };
+}
 
 function getLocalConversation(id: string): ConversationMessage[] {
   if (!id) return [welcomeMessage];
@@ -338,11 +505,31 @@ function getLocalConversation(id: string): ConversationMessage[] {
   return [welcomeMessage];
 }
 
+function conversationOwnerIdentity(): string {
+  return currentIdentity || AuthManager.getCurrentUser().identity || 'local';
+}
+
+function conversationRegistryKey(identity: string): string {
+  return `tabby_conversation_ids:${encodeURIComponent(identity.toLowerCase())}`;
+}
+
+function registerConversationArtifact(identity: string, id: string) {
+  if (!id) return;
+  try {
+    const key = conversationRegistryKey(identity);
+    const existing = JSON.parse(localStorage.getItem(key) || '[]');
+    const ids = new Set(Array.isArray(existing) ? existing.filter(value => typeof value === 'string') : []);
+    ids.add(id);
+    localStorage.setItem(key, JSON.stringify([...ids]));
+  } catch {}
+}
+
 function saveLocalConversation(id: string, messages: ConversationMessage[]) {
   if (!id) return;
   try {
     localStorage.setItem(`tabby_convo:${id}`, JSON.stringify(messages));
     localStorage.setItem('tabby_active_conversation_default', id);
+    registerConversationArtifact(conversationOwnerIdentity(), id);
   } catch (err) {
     console.warn('Failed saving conversation to localStorage:', err);
   }
@@ -375,7 +562,7 @@ function currentIdentityHasMembership() {
   return Boolean(
     isConnected &&
     currentIdentity &&
-    [...connection.db.member.iter()].some(member => member.identity.toHexString() === currentIdentity),
+    householdGateway.members().some(member => member.identity.toHexString() === currentIdentity),
   );
 }
 
@@ -437,17 +624,63 @@ function decodeStoredMessage(content: string): Pick<ConversationMessage, 'text' 
   return { text: content };
 }
 
-function persistConversationMessage(message: Omit<ConversationMessage, 'id'>) {
-  if (!isConnected || !activeConversationId || syncingConversation || !currentIdentityHasMembership()) return;
-  try {
-    connection.reducers.appendConversationMessage({
+async function persistConversationMessage(message: Omit<ConversationMessage, 'id'>) {
+  if (!activeConversationId || syncingConversation || !currentIdentityHasMembership()) return;
+  await householdGateway.appendConversationMessage({
       conversationId: activeConversationId,
       role: message.role,
       agent: message.agent,
       content: encodeStoredMessage(message),
-    });
-  } catch (err) {
-    console.warn('Failed persisting message to SpacetimeDB:', err);
+  });
+}
+
+type MessageOutboxPayload = {
+  conversationId: string;
+  messageId: string;
+  role: string;
+  agent: string;
+  content: string;
+  text: string;
+};
+
+function activeOutbox(): PersistentOutbox {
+  const scope = `${currentIdentity || 'local'}:${activeHomeSelection().flatId || 'no-home'}`;
+  let outbox = outboxes.get(scope);
+  if (!outbox) {
+    outbox = new PersistentOutbox({ identity: currentIdentity || 'local', homeId: activeHomeSelection().flatId || 'no-home' });
+    outboxes.set(scope, outbox);
+  }
+  return outbox;
+}
+
+async function processOutboxCommand(command: Readonly<OutboxCommand>) {
+  if (command.kind !== 'appendConversationMessage') throw new Error(`Unsupported queued command: ${command.kind}`);
+  const payload = command.payload as MessageOutboxPayload;
+  await householdGateway.appendConversationMessage({
+    conversationId: payload.conversationId,
+    role: payload.role,
+    agent: payload.agent,
+    content: payload.content,
+  });
+}
+
+async function flushActiveOutbox() {
+  if (!isConnected || navigator.onLine === false) return;
+  const outbox = activeOutbox();
+  const commands = await outbox.flush(processOutboxCommand);
+  const bindings = Object.fromEntries(commands.map(command => [command.idempotencyKey, (command.payload as MessageOutboxPayload).messageId]));
+  const deliveries = new ConversationDeliveryStore(currentIdentity || 'local').projectOutbox(bindings, commands);
+  for (const delivery of deliveries) {
+    const message = conversation.find(candidate => candidate.id === delivery.messageId);
+    if (!message) continue;
+    updateMessage(message.id, { delivery: delivery.status });
+    const command = commands.find(candidate => candidate.id === delivery.commandId);
+    const routedKey = `tabby_outbox_routed:${delivery.commandId}`;
+    if (delivery.status === 'sent' && command && !localStorage.getItem(routedKey)) {
+      localStorage.setItem(routedKey, '1');
+      const payload = command.payload as MessageOutboxPayload;
+      await routeMessage(payload.text);
+    }
   }
 }
 
@@ -456,12 +689,35 @@ function addMessage(message: Omit<ConversationMessage, 'id'>, persist = true) {
   conversation.push(newMsg);
   saveLocalConversation(activeConversationId, conversation);
   renderConversation();
-  if (persist) persistConversationMessage(message);
+  if (persist) void persistConversationMessage(message).catch(err => {
+    console.warn('Failed persisting message to SpacetimeDB:', err);
+  });
+  return newMsg;
+}
+
+function updateMessage(id: string, patch: Partial<ConversationMessage>) {
+  const message = conversation.find(candidate => candidate.id === id);
+  if (!message) return;
+  Object.assign(message, patch);
+  saveLocalConversation(activeConversationId, conversation);
+  renderConversation();
+}
+
+function completeProgressMessage(id: string, message: Omit<ConversationMessage, 'id'>) {
+  const pending = conversation.find(candidate => candidate.id === id);
+  if (!pending) {
+    addMessage(message);
+    return;
+  }
+  Object.assign(pending, message, { pending: false, progressLabel: undefined });
+  saveLocalConversation(activeConversationId, conversation);
+  renderConversation();
+  void persistConversationMessage(message).catch(err => console.warn('Failed persisting response:', err));
 }
 
 function syncConversationFromDatabase() {
   if (!activeConversationId) return;
-  const rows = [...connection.db.myConversationMessages.iter()]
+  const rows = householdGateway.conversationMessages()
     .filter(row => row.conversationId === activeConversationId)
     .sort((a, b) => Number(a.id - b.id));
   syncingConversation = true;
@@ -488,6 +744,9 @@ function selectConversation(id: string) {
   const identity = currentIdentity || 'local';
   localStorage.setItem(`tabby_active_conversation:${identity}`, id);
   localStorage.setItem('tabby_active_conversation_default', id);
+  conversationFeatureState = reduceConversationState(conversationFeatureState, {
+    type: 'select', conversationId: id,
+  });
   conversation = getLocalConversation(id);
   renderConversation();
   syncConversationFromDatabase();
@@ -495,7 +754,7 @@ function selectConversation(id: string) {
 
 function renderConversationPicker() {
   const picker = document.querySelector<HTMLSelectElement>('#conversation-picker')!;
-  const rows = [...connection.db.myConversations.iter()]
+  const rows = householdGateway.conversations()
     .sort((a, b) => Number(b.updatedAt.microsSinceUnixEpoch - a.updatedAt.microsSinceUnixEpoch));
   picker.innerHTML = rows.map((row, index) =>
     `<option value="${escapeHtml(row.id)}" ${row.id === activeConversationId ? 'selected' : ''}>${escapeHtml(row.title)}${index === 0 ? ' · Recent' : ''}</option>`
@@ -509,7 +768,8 @@ function ensureConversation() {
     return;
   }
 
-  const rows = [...connection.db.myConversations.iter()];
+  const rows = householdGateway.conversations();
+  if (currentIdentity) rows.forEach(row => registerConversationArtifact(currentIdentity, row.id));
   const saved = (currentIdentity && localStorage.getItem(`tabby_active_conversation:${currentIdentity}`)) ||
     localStorage.getItem('tabby_active_conversation_default') ||
     activeConversationId;
@@ -553,20 +813,121 @@ function renderConversation() {
       ? `<span class="message-agent ${message.agent}">${agentNames[message.agent]}</span>`
       : '';
     return `
-      <article class="message ${message.role} ${message.pending ? 'pending' : ''}">
+      <article class="message ${message.role} ${message.pending ? 'pending' : ''} ${message.delivery ?? ''}">
         ${agentLabel}
         <div class="message-content">
           ${message.contentHtml ?? `<p>${escapeHtml(message.text ?? '')}</p>`}
         </div>
+        ${message.routes?.length ? `<ol class="message-route-results" aria-label="Request progress">${message.routes.map(route => `<li class="message-route-result route-${route.status}"><strong>${escapeHtml(route.intent === 'grocery' ? 'Pantry' : route.intent === 'chef' ? 'Kitchen' : route.intent === 'billing' ? 'Bills' : route.intent === 'context' ? 'Home notes' : 'Tabby')}</strong><span>${escapeHtml(route.error || route.summary || (route.status === 'pending' ? 'Working…' : route.status === 'unavailable' ? 'Unavailable' : 'Done'))}</span></li>`).join('')}</ol>` : ''}
+        ${message.pending ? `<p class="message-progress" role="status"><span class="route-signal"></span>${escapeHtml(message.progressLabel || 'Tabby is working')}</p>` : ''}
+        ${message.role === 'user' && message.delivery && message.delivery !== 'sent' ? `
+          <div class="message-delivery" role="status">
+            <span>${message.delivery === 'sending' ? 'Sending' : message.delivery === 'rejected' ? 'Could not send' : 'Not sent'}</span>
+            ${message.commandKey && message.delivery !== 'sending' ? `<button type="button" data-retry-message="${escapeHtml(message.commandKey)}">Retry</button>` : ''}
+          </div>` : ''}
       </article>
     `;
   }).join('');
   bindMessageActions();
+  document.querySelectorAll<HTMLButtonElement>('[data-retry-message]').forEach(button => {
+    button.addEventListener('click', () => void retryMessage(button.dataset.retryMessage || ''));
+  });
   requestAnimationFrame(() => target.scrollTo({ top: target.scrollHeight, behavior: 'smooth' }));
+  renderConversationFeature();
+}
+
+function plainMessage(message: ConversationMessage): string {
+  if (message.text) return message.text;
+  if (!message.contentHtml) return '';
+  const container = document.createElement('div');
+  container.innerHTML = message.contentHtml;
+  return container.textContent?.replace(/\s+/g, ' ').trim() || 'Household result';
+}
+
+function conversationRecords(): ConversationRecord[] {
+  if (isConnected && isDatabaseSynchronized) {
+    const rows = householdGateway.conversations()
+      .sort((left, right) => Number(right.updatedAt.microsSinceUnixEpoch - left.updatedAt.microsSinceUnixEpoch));
+    const messages = householdGateway.conversationMessages();
+    const priorReadAt = new Map(conversationFeatureState.conversations.flatMap(record =>
+      record.messages.filter(message => message.readAt).map(message => [message.id, message.readAt] as const)));
+    if (rows.length) return rows.map(row => ({
+      id: row.id,
+      title: row.title,
+      messages: messages.filter(message => message.conversationId === row.id)
+        .sort((left, right) => Number(left.id - right.id))
+        .map(message => {
+          const decoded = decodeStoredMessage(message.content);
+          return {
+            id: message.id.toString(),
+            role: message.role === 'user' ? 'user' as const : 'assistant' as const,
+            text: decoded.text || (() => {
+              const node = document.createElement('div');
+              node.innerHTML = decoded.contentHtml || '';
+              return node.textContent?.replace(/\s+/g, ' ').trim() || 'Household result';
+            })(),
+            createdAt: message.createdAt.toISOString(),
+            readAt: priorReadAt.get(message.id.toString()),
+          };
+        }),
+    }));
+  }
+  return [{
+    id: activeConversationId,
+    title: conversation.find(message => message.role === 'user')?.text?.slice(0, 48) || 'New conversation',
+    messages: conversation.map((message, index) => ({
+      id: message.id,
+      role: message.role,
+      text: plainMessage(message),
+      createdAt: new Date(Date.now() - Math.max(0, conversation.length - index) * 1_000).toISOString(),
+      delivery: message.delivery,
+      routes: message.routes,
+    })),
+  }];
+}
+
+function renderConversationFeature() {
+  const target = document.querySelector<HTMLElement>('#conversation-feature-mount');
+  if (!target) return;
+  conversationFeatureState = reduceConversationState(conversationFeatureState, {
+    type: 'replace', conversations: conversationRecords(),
+  });
+  if (!conversationFeatureState.activeConversationId && activeConversationId) {
+    conversationFeatureState = reduceConversationState(conversationFeatureState, {
+      type: 'select', conversationId: activeConversationId,
+    });
+  }
+  const reminderCount = isDatabaseSynchronized ? householdGateway.reminders().length : 0;
+  const starters = reminderCount > 0 ? [] : emptyHomeStarterSuggestions({
+      synchronized: isDatabaseSynchronized,
+      homeSelected: Boolean(activeHomeSelection().flatId),
+      pantryCount: isDatabaseSynchronized ? householdGateway.pantryItems().length : 0,
+      noteCount: isDatabaseSynchronized ? householdGateway.sharedMemories().length : 0,
+      agreementCount: isDatabaseSynchronized ? householdGateway.flatRules().length : 0,
+      billCount: isDatabaseSynchronized ? householdGateway.billReviews().length : 0,
+    });
+  target.innerHTML = renderConversationRoute(conversationFeatureState, { starters });
+  target.querySelector<HTMLInputElement>('[data-conversation-search]')?.addEventListener('input', event => {
+    conversationFeatureState = reduceConversationState(conversationFeatureState, {
+      type: 'search', query: (event.currentTarget as HTMLInputElement).value,
+    });
+    renderConversationFeature();
+  });
+  target.querySelectorAll<HTMLButtonElement>('[data-conversation-id]').forEach(button => {
+    button.addEventListener('click', () => selectConversation(button.dataset.conversationId || ''));
+  });
+  target.querySelectorAll<HTMLButtonElement>('[data-starter-prompt]').forEach(button => {
+    button.addEventListener('click', () => {
+      const composer = document.querySelector<HTMLTextAreaElement>('#chat-input');
+      if (!composer) return;
+      composer.value = button.dataset.starterPrompt || '';
+      composer.focus();
+    });
+  });
 }
 
 function getSharedContext(): SharedContextRecord[] {
-  return [...connection.db.sharedMemory.iter()]
+  return householdGateway.sharedMemories()
     .map(row => ({
       id: row.id.toString(),
       subjectIdentity: row.subjectIdentity.toHexString(),
@@ -582,9 +943,9 @@ function getSharedContext(): SharedContextRecord[] {
 
 function getRoommates(): RoommateProfile[] {
   const shared = getSharedContext();
-  const activeFlat = ResidenceManager.getActiveFlat();
+  const activeFlat = activeHomeSelection();
   const members = selectFlatRoommates(
-    [...connection.db.member.iter()].map(member => ({
+    householdGateway.members().map(member => ({
       identityHex: member.identity.toHexString(),
       flatId: member.flatId.toString(),
       displayName: member.displayName,
@@ -598,7 +959,13 @@ function getRoommates(): RoommateProfile[] {
   for (const member of members) {
     const identity = member.identityHex;
     const displayName = memberName(identity, member.displayName);
-    const profile = HouseholdConfigManager.getProfile(identity, displayName);
+    const profile = scopedHouseholdConfig()?.getProfile(identity, displayName) ?? {
+      identityHex: identity,
+      displayName,
+      dietaryTags: [],
+      cookingHabits: [],
+      customSplitExclusions: [],
+    };
     profile.displayName = displayName;
     const facts = shared.filter(record => record.subjectIdentity === identity);
     for (const fact of facts) {
@@ -616,7 +983,7 @@ function getRoommates(): RoommateProfile[] {
 
 function currentName() {
   if (isConnected && currentIdentity) {
-    const member = [...connection.db.member.iter()]
+    const member = householdGateway.members()
       .find(row => row.identity.toHexString() === currentIdentity);
     const databaseName = member?.displayName.trim() || '';
     if (databaseName && !/^(?:housemate\s+)?(?:0x)?c200[a-f0-9]*$/i.test(databaseName)) {
@@ -635,9 +1002,25 @@ interface LocalPantryItem {
   unit: string;
 }
 
+function scopedHouseholdConfig() {
+  const identity = currentIdentity || AuthManager.getCurrentUser().identity || '';
+  const homeId = activeHomeSelection().flatId;
+  if (!identity || !homeId) return null;
+  return HouseholdConfigManager.forScope({ identity, homeId });
+}
+
+function activeHomeCacheKey(namespace: 'pantry' | 'rules'): string | null {
+  const identity = currentIdentity || AuthManager.getCurrentUser().identity || '';
+  const homeId = activeHomeSelection().flatId;
+  if (!identity || !/^\d+$/.test(homeId)) return null;
+  return `tabby_local_${namespace}:${encodeURIComponent(identity.toLowerCase())}:${homeId}`;
+}
+
 function getLocalPantry(): LocalPantryItem[] {
+  const key = activeHomeCacheKey('pantry');
+  if (!key) return [];
   try {
-    const raw = localStorage.getItem('tabby_local_pantry');
+    const raw = localStorage.getItem(key);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed;
@@ -647,20 +1030,22 @@ function getLocalPantry(): LocalPantryItem[] {
 }
 
 function saveLocalPantry(items: LocalPantryItem[]) {
+  const key = activeHomeCacheKey('pantry');
+  if (!key) return;
   try {
-    localStorage.setItem('tabby_local_pantry', JSON.stringify(items));
+    localStorage.setItem(key, JSON.stringify(items));
   } catch {}
 }
 
 function pantryData() {
-  const dbRows = [...connection.db.pantryItem.iter()].map(item => ({
+  const dbRows = householdGateway.pantryItems().map(item => ({
     id: item.id.toString(),
     name: item.name,
     quantity: item.quantity,
     unit: item.unit,
   }));
 
-  if (dbRows.length > 0) {
+  if (isDatabaseSynchronized) {
     saveLocalPantry(dbRows);
     return dbRows;
   }
@@ -668,32 +1053,30 @@ function pantryData() {
   return getLocalPantry();
 }
 
-function addOrUpdatePantryItem(name: string, quantity: number, unit: string) {
+async function addOrUpdatePantryItem(name: string, quantity: number, unit: string) {
   const cleanName = name.trim().toLowerCase();
-  if (!cleanName || quantity === 0) return;
+  if (!cleanName || quantity === 0) return { status: 'rejected' as const, error: new Error('Enter an item and quantity.') };
 
   const cleanUnit = unit.trim() || 'items';
-  const local = getLocalPantry();
-  const existingIndex = local.findIndex(i => i.name.toLowerCase() === cleanName);
+  const commandKey = `pantry:${cleanName}:${Date.now()}`;
+  const result = await commandCoordinator.execute(commandKey, async () => {
+    await householdGateway.addPantryItem({ name: cleanName, quantity, unit: cleanUnit });
+  });
 
-  if (existingIndex >= 0) {
-    local[existingIndex].quantity = Math.max(0, local[existingIndex].quantity + quantity);
-    local[existingIndex].unit = cleanUnit;
-  } else if (quantity > 0) {
-    local.push({ id: crypto.randomUUID(), name: cleanName, quantity, unit: cleanUnit });
-  }
-  const filtered = local.filter(i => i.quantity > 0);
-  saveLocalPantry(filtered);
-
-  if (isConnected) {
-    try {
-      connection.reducers.addPantryItem({ name: cleanName, quantity, unit: cleanUnit });
-    } catch (err) {
-      console.warn('SpacetimeDB addPantryItem notice:', err);
+  if (result.status === 'acknowledged') {
+    const local = getLocalPantry();
+    const existingIndex = local.findIndex(i => i.name.toLowerCase() === cleanName);
+    if (existingIndex >= 0) {
+      local[existingIndex].quantity = Math.max(0, local[existingIndex].quantity + quantity);
+      local[existingIndex].unit = cleanUnit;
+    } else if (quantity > 0) {
+      local.push({ id: crypto.randomUUID(), name: cleanName, quantity, unit: cleanUnit });
     }
+    saveLocalPantry(local.filter(i => i.quantity > 0));
+    renderContextPanel();
+    renderPantryRoute();
   }
-
-  renderContextPanel();
+  return result;
 }
 
 export interface LocalFlatRule {
@@ -704,39 +1087,37 @@ export interface LocalFlatRule {
 }
 
 function getLocalRules(): LocalFlatRule[] {
+  const key = activeHomeCacheKey('rules');
+  if (!key) return [];
   try {
-    const raw = localStorage.getItem('tabby_flat_rules');
+    const raw = localStorage.getItem(key);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed;
     }
   } catch {}
-  return [
-    { id: '1', ruleType: 'explicit', title: 'Quiet hours after 11 PM', description: 'Keep common area volume low.' },
-    { id: '2', ruleType: 'implicit', title: 'Restock milk when empty', description: 'Whoever finishes milk adds it to grocery list.' },
-  ];
+  return [];
 }
 
 function saveLocalRules(rules: LocalFlatRule[]) {
+  const key = activeHomeCacheKey('rules');
+  if (!key) return;
   try {
-    localStorage.setItem('tabby_flat_rules', JSON.stringify(rules));
+    localStorage.setItem(key, JSON.stringify(rules));
   } catch {}
 }
 
 function flatRulesData(): LocalFlatRule[] {
-  if (connection?.db?.flatRule) {
+  if (connection?.db?.myFlatRules) {
     try {
-      const activeFlat = ResidenceManager.getActiveFlat();
-      const activeFlatId = BigInt(activeFlat.flatId.match(/^\d+$/) ? activeFlat.flatId : '1');
-      const dbRows = [...connection.db.flatRule.iter()]
-        .filter(r => r.flatId === activeFlatId || !r.flatId || r.flatId === 0n)
+      const dbRows = householdGateway.flatRules()
         .map(r => ({
           id: r.id.toString(),
           ruleType: (r.ruleType === 'implicit' ? 'implicit' : 'explicit') as 'implicit' | 'explicit',
           title: r.title,
           description: r.description || '',
         }));
-      if (dbRows.length > 0) {
+      if (isDatabaseSynchronized) {
         saveLocalRules(dbRows);
         return dbRows;
       }
@@ -747,79 +1128,101 @@ function flatRulesData(): LocalFlatRule[] {
   return getLocalRules();
 }
 
-function addOrUpdateFlatRule(ruleType: 'implicit' | 'explicit', title: string, description = '') {
-  const rules = getLocalRules();
-  rules.push({ id: crypto.randomUUID(), ruleType, title, description });
-  saveLocalRules(rules);
-  if (isConnected) {
-    try {
-      connection.reducers.upsertFlatRule({
+async function addOrUpdateFlatRule(ruleType: 'implicit' | 'explicit', title: string, description = '') {
+  const result = await commandCoordinator.execute(`rule:add:${Date.now()}`, async () => {
+    await householdGateway.upsertFlatRule({
         id: 0n,
         ruleType,
         title,
         description,
-      });
-    } catch (e) {
-      console.warn('upsertFlatRule notice:', e);
-    }
+    });
+  });
+  if (result.status === 'acknowledged') {
+    const rules = getLocalRules();
+    rules.push({ id: crypto.randomUUID(), ruleType, title, description });
+    saveLocalRules(rules);
+    renderContextPanel();
   }
-  renderContextPanel();
+  return result;
 }
 
-function deleteFlatRule(id: string) {
-  const rules = getLocalRules().filter(r => r.id !== id);
-  saveLocalRules(rules);
-  if (isConnected) {
-    try {
-      connection.reducers.deleteFlatRule({ id: BigInt(id.match(/^\d+$/) ? id : '0') });
-    } catch (e) {
-      console.warn('deleteFlatRule notice:', e);
-    }
-  }
-  renderContextPanel();
+function pendingDeletionFor(kind: DeletableHouseholdRow['kind'], id: string): boolean {
+  const activeHomeId = activeHomeSelection().flatId;
+  return [...pendingDeletions.values()].some(pending =>
+    pending.target.kind === kind &&
+    pending.target.row.id.toString() === id &&
+    pendingDeletionHomes.get(pending.token) === activeHomeId);
 }
 
-function clearAllTabbyData() {
-  if (!confirm('Delete your Tabby data? This removes pantry items, expenses, memories, conversations, and local household settings.')) {
+function removePendingDeletion(token: string) {
+  pendingDeletions.delete(token);
+  pendingDeletionHomes.delete(token);
+  const timer = pendingDeletionTimers.get(token);
+  if (timer !== undefined) window.clearTimeout(timer);
+  pendingDeletionTimers.delete(token);
+}
+
+function scheduleHouseholdDeletion(target: DeletableHouseholdRow) {
+  const homeId = activeHomeSelection().flatId;
+  if (!isConnected || navigator.onLine === false || !homeId) {
+    showToast('Reconnect before removing shared household items.', 'error');
     return;
   }
 
-  if (isConnected) {
-    try {
-      (connection.reducers as any).clearAllData?.({});
-    } catch (err) {
-      console.warn('clearAllData notice:', err);
+  const token = `delete:${homeId}:${target.kind}:${target.row.id}:${crypto.randomUUID()}`;
+  const pending = scheduleDeletion(token, target, Date.now());
+  pendingDeletions.set(token, pending);
+  pendingDeletionHomes.set(token, homeId);
+  renderContextPanel();
+  renderPantryRoute();
+
+  const label = target.kind === 'pantry' ? target.row.name : target.row.title;
+  showToast(`${label} is pending removal.`, 'success', {
+    label: 'Undo',
+    onClick: () => {
+      const current = pendingDeletions.get(token);
+      if (!current || !undoDeletion(current, Date.now()).restored) return;
+      removePendingDeletion(token);
+      renderContextPanel();
+      renderPantryRoute();
+      showToast(`${label} was restored.`);
+    },
+  });
+
+  const timer = window.setTimeout(async () => {
+    const current = pendingDeletions.get(token);
+    if (!current) return;
+    const action = deletionActionWhenDue(current, Date.now());
+    if (!action) return;
+    if (pendingDeletionHomes.get(token) !== activeHomeSelection().flatId) {
+      removePendingDeletion(token);
+      renderContextPanel();
+      renderPantryRoute();
+      showToast(`${label} was restored because the active home changed.`, 'error');
+      return;
     }
-  }
-
-  localStorage.removeItem('tabby_local_pantry');
-  localStorage.removeItem('tabby_flat_rules');
-  localStorage.removeItem('tabby_brain_private_v1');
-  const allKeys = Object.keys(localStorage);
-  for (const k of allKeys) {
-    if (k.startsWith('tabby_convo:') || k.startsWith('tabby_active_conversation:')) {
-      localStorage.removeItem(k);
+    const result = await commandCoordinator.execute(token, () => householdGateway.executeHouseholdAction(action));
+    removePendingDeletion(token);
+    if (result.status === 'acknowledged') {
+      if (target.kind === 'pantry') saveLocalPantry(getLocalPantry().filter(row => row.id !== target.row.id.toString()));
+      else saveLocalRules(getLocalRules().filter(row => row.id !== target.row.id.toString()));
+      showToast(`${label} was removed.`);
+    } else {
+      showToast(result.status === 'rejected' ? result.error.message : `${label} was restored because Tabby went offline.`, 'error');
     }
-  }
-
-  const newId = crypto.randomUUID();
-  activeConversationId = newId;
-  localStorage.setItem('tabby_active_conversation_default', newId);
-  conversation = [welcomeMessage];
-  saveLocalConversation(newId, conversation);
-
-  document.querySelector<HTMLDialogElement>('#ai-dialog')?.close();
-  renderConversation();
-  renderAll();
-  showToast('Your Tabby data was deleted.');
+    renderContextPanel();
+    renderPantryRoute();
+  }, Math.max(0, pending.deleteAtMs - Date.now()));
+  pendingDeletionTimers.set(token, timer);
 }
 
 function renderContextPanel() {
   const roommates = getRoommates();
   const peoplePresentation = peopleListPresentation(isPeopleSynchronized, roommates.length);
   const memory = getSharedContext();
-  const pantry = pantryData().filter(item => item.quantity > 0).sort((a, b) => a.name.localeCompare(b.name));
-  const rules = flatRulesData();
+  const pantry = pantryData().filter(item => item.quantity > 0 && !pendingDeletionFor('pantry', item.id)).sort((a, b) => a.name.localeCompare(b.name));
+  const rules = flatRulesData().filter(rule => !pendingDeletionFor('rule', rule.id));
+  const deletionAvailable = isConnected && navigator.onLine !== false;
 
   document.querySelector('#people-count')!.textContent = peoplePresentation.countLabel;
   document.querySelector('#memory-count')!.textContent = String(memory.length);
@@ -834,7 +1237,9 @@ function renderContextPanel() {
       </div>`).join('')
     : `<p class="empty-state">${escapeHtml(peoplePresentation.emptyMessage)}</p>`;
 
-  document.querySelector('#memory-list')!.innerHTML = memory.length
+  document.querySelector('#memory-list')!.innerHTML = !isDatabaseSynchronized
+    ? '<div class="skeleton-list" aria-label="Loading Home notes"><span></span><span></span></div>'
+    : memory.length
     ? memory.slice(0, 8).map(fact => `
       <div class="memory-row">
         <span class="memory-category">${escapeHtml(formatCategory(fact.category))}</span>
@@ -842,23 +1247,27 @@ function renderContextPanel() {
       </div>`).join('')
     : '<p class="empty-state">Nothing saved yet. Ask Tabby to remember a shared Home note.</p>';
 
-  document.querySelector('#pantry-list')!.innerHTML = pantry.length
+  document.querySelector('#pantry-list')!.innerHTML = !isDatabaseSynchronized
+    ? '<div class="skeleton-list" aria-label="Loading pantry"><span></span><span></span><span></span></div>'
+    : pantry.length
     ? pantry.map(item => `
       <div class="pantry-row">
         <span>${escapeHtml(item.name)}</span>
         <div class="pantry-actions">
           <strong>${item.quantity} ${escapeHtml(item.unit)}</strong>
-          <button type="button" class="pantry-item-del" data-remove-pantry="${escapeHtml(item.name)}" title="Remove item">×</button>
+          <button type="button" class="pantry-item-del" data-remove-pantry="${escapeHtml(item.id)}" data-shared-action title="Remove item" ${!deletionAvailable || !/^\d+$/.test(item.id) ? 'disabled' : ''}>×</button>
         </div>
       </div>`).join('')
     : '<p class="empty-state">The kitchen is empty. Add an item here or ask Pantry to save what you bought.</p>';
 
-  document.querySelector('#rules-list')!.innerHTML = rules.length
+  document.querySelector('#rules-list')!.innerHTML = !isDatabaseSynchronized
+    ? '<div class="skeleton-list" aria-label="Loading agreements"><span></span><span></span></div>'
+    : rules.length
     ? rules.map(rule => `
       <div class="rule-row">
         <div class="rule-row-header">
           <span class="rule-badge ${rule.ruleType}">${rule.ruleType}</span>
-          <button type="button" class="pantry-item-del" data-remove-rule="${escapeHtml(rule.id)}" title="Delete rule">×</button>
+          <button type="button" class="pantry-item-del" data-remove-rule="${escapeHtml(rule.id)}" data-shared-action title="Delete rule" ${!deletionAvailable || !/^\d+$/.test(rule.id) ? 'disabled' : ''}>×</button>
         </div>
         <div class="rule-title">${escapeHtml(rule.title)}</div>
         ${rule.description ? `<small style="color: var(--muted);">${escapeHtml(rule.description)}</small>` : ''}
@@ -867,30 +1276,101 @@ function renderContextPanel() {
 
   document.querySelectorAll<HTMLButtonElement>('[data-remove-pantry]').forEach(btn => {
     btn.onclick = () => {
-      const name = btn.dataset.removePantry || '';
-      if (!name) return;
-      const current = pantry.find(p => p.name.toLowerCase() === name.toLowerCase());
-      if (current) {
-        addOrUpdatePantryItem(name, -current.quantity, current.unit);
-        showToast(`Removed ${name} from pantry.`);
-      }
+      const id = btn.dataset.removePantry || '';
+      const current = pantry.find(item => item.id === id);
+      if (current && /^\d+$/.test(id)) scheduleHouseholdDeletion({ kind: 'pantry', row: { id: BigInt(id), name: current.name } });
     };
   });
 
   document.querySelectorAll<HTMLButtonElement>('[data-remove-rule]').forEach(btn => {
     btn.onclick = () => {
       const id = btn.dataset.removeRule || '';
-      if (id) {
-        deleteFlatRule(id);
-        showToast('Rule removed.');
-      }
+      const current = rules.find(rule => rule.id === id);
+      if (current && /^\d+$/.test(id)) scheduleHouseholdDeletion({ kind: 'rule', row: { id: BigInt(id), title: current.title } });
     };
   });
+
+  const pantryViews = isDatabaseSynchronized
+    ? pantryViewItems(householdGateway.pantryItems(), householdGateway.pantryItemDetails())
+      .filter(item => !pendingDeletionFor('pantry', item.id.toString()))
+    : [];
+  const reminders = isDatabaseSynchronized
+    ? reminderViews(householdGateway.reminders(), BigInt(Date.now()) * 1_000n)
+    : [];
+  const shelfSummary = document.querySelector<HTMLElement>('#shelf-summary-mount');
+  if (shelfSummary) shelfSummary.innerHTML = renderHomeShelfSummary({
+    homeName: activeHomeSelection().flatName,
+    people: roommates,
+    pantry: pantryViews,
+    notes: memory.map(item => ({ title: item.value })),
+    agreements: rules.map(item => ({ title: item.title })),
+    reminders,
+    online: isConnected && navigator.onLine !== false,
+    mobile: contextIsDrawer(),
+  });
+  const reminderMount = document.querySelector<HTMLElement>('#reminder-shelf-mount');
+  if (reminderMount) {
+    reminderMount.innerHTML = renderReminderShelf(reminders, isConnected && navigator.onLine !== false);
+    reminderMount.querySelectorAll<HTMLButtonElement>('[data-complete-reminder]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const id = button.closest<HTMLElement>('[data-reminder-id]')?.dataset.reminderId;
+        if (!id) return;
+        button.disabled = true;
+        const result = await commandCoordinator.execute(`reminder:complete:${id}`, () =>
+          householdGateway.executeHouseholdAction(completeReminderAction(BigInt(id))));
+        if (result.status !== 'acknowledged') {
+          button.disabled = false;
+          showToast(result.status === 'rejected' ? result.error.message : 'Reconnect to complete this reminder.', 'error');
+        }
+      });
+    });
+  }
 }
 
-function publishSharedFacts(facts: MemoryFact[]) {
-  if (!isConnected || !currentIdentity) return;
+function renderPantryRoute() {
+  const target = document.querySelector<HTMLElement>('#pantry-route-content');
+  if (!target) return;
+  if (!isDatabaseSynchronized) {
+    target.innerHTML = '<div class="skeleton-list route-skeleton" aria-label="Loading pantry"><span></span><span></span><span></span></div>';
+    return;
+  }
+  const items = pantryViewItems(householdGateway.pantryItems(), householdGateway.pantryItemDetails())
+    .filter(item => !pendingDeletionFor('pantry', item.id.toString()));
+  target.innerHTML = renderRichPantryRoute(items, {
+    nowMicros: BigInt(Date.now()) * 1_000n,
+    online: isConnected && navigator.onLine !== false,
+    mobile: window.matchMedia('(max-width: 720px)').matches,
+    filters: pantryFilters,
+  });
+  const search = target.querySelector<HTMLInputElement>('[data-pantry-search]');
+  const category = target.querySelector<HTMLSelectElement>('[data-pantry-category]');
+  const location = target.querySelector<HTMLSelectElement>('[data-pantry-location]');
+  const stock = target.querySelector<HTMLSelectElement>('[data-pantry-stock]');
+  if (category) category.value = pantryFilters.category || '';
+  if (location) location.value = pantryFilters.location || '';
+  if (stock) stock.value = pantryFilters.stockState || 'all';
+  const updateFilters = () => {
+    pantryFilters = {
+      query: search?.value || '',
+      category: category?.value || '',
+      location: location?.value || '',
+      stockState: (stock?.value || 'all') as PantryFilters['stockState'],
+    };
+    renderPantryRoute();
+  };
+  search?.addEventListener('input', updateFilters);
+  category?.addEventListener('change', updateFilters);
+  location?.addEventListener('change', updateFilters);
+  stock?.addEventListener('change', updateFilters);
+}
+
+async function publishSharedFacts(facts: MemoryFact[]): Promise<number> {
+  if (!facts.length) return 0;
+  if (!isConnected || !currentIdentity || navigator.onLine === false) {
+    throw new Error('Reconnect before saving a shared Home note.');
+  }
   const existing = getSharedContext();
+  let saved = 0;
   for (const fact of facts) {
     const duplicate = existing.some(record =>
       record.subjectIdentity === currentIdentity &&
@@ -899,14 +1379,25 @@ function publishSharedFacts(facts: MemoryFact[]) {
       record.value.toLowerCase() === fact.value.toLowerCase()
     );
     if (!duplicate) {
-      connection.reducers.upsertSharedMemory({
-        category: fact.category,
-        memoryKey: fact.key,
-        value: fact.value,
-        sourceMessageId: 0n,
+      const result = await commandCoordinator.execute(`home-note:${fact.category}:${fact.key}:${crypto.randomUUID()}`, () =>
+        connection.reducers.upsertSharedMemory({
+          category: fact.category,
+          memoryKey: fact.key,
+          value: fact.value,
+          sourceMessageId: 0n,
+        }));
+      if (result.status !== 'acknowledged') {
+        throw result.status === 'rejected' ? result.error : new Error('Reconnect before saving a shared Home note.');
+      }
+      existing.push({
+        ...fact,
+        subjectIdentity: currentIdentity,
+        subjectName: currentName(),
       });
+      saved += 1;
     }
   }
+  return saved;
 }
 
 function renderShoppingPlan(plan: Awaited<ReturnType<typeof AgentShopping.generateShoppingPlan>>) {
@@ -965,113 +1456,147 @@ function renderCookingPlan(plan: Awaited<ReturnType<typeof AgentCooking.generate
 
 function renderSplit(split: SplitResult) {
   currentSplit = split;
-  return `
-    <div class="agent-result">
-      <div class="result-heading"><h3>${escapeHtml(split.billTitle)}</h3><strong>${money(split.totalAmountPaise)}</strong></div>
-      <div class="split-layout">
-        <div>
-          <h4>Receipt</h4>
-          ${split.lineItems.map(item => `<div class="split-row"><span>${escapeHtml(item.name)}</span><strong>${money(item.pricePaise)}</strong></div>`).join('')}
-        </div>
-        <div>
-          <h4>Fair split</h4>
-          ${split.roommateShares.map(share => `
-            <div class="share-row">
-              <span><strong>${escapeHtml(share.displayName)}</strong><small>${share.itemCount} shared items${share.isExemptFromItems.length ? ` · ${share.isExemptFromItems.length} exemptions` : ''}</small></span>
-              <strong>${money(share.amountPaise)}</strong>
-            </div>`).join('')}
-        </div>
-      </div>
-      <button class="result-primary" data-record-expense>Record household expense</button>
-    </div>`;
+  const members = householdGateway.members();
+  const payerRow = members.find(member => member.identity.toHexString() === currentIdentity) || members[0];
+  if (!payerRow) return '<div class="agent-result"><p>Join a synchronized home before reviewing a shared bill.</p></div>';
+  const billMembers = members.map(member => ({ identity: member.identity, displayName: memberName(member.identity.toHexString(), member.displayName) }));
+  const adjustedLines = split.lineItems.map(line => ({ ...line }));
+  if (split.taxOrDiscountPaise > 0n) {
+    adjustedLines.push({
+      id: 'receipt-adjustment',
+      name: 'Taxes and charges',
+      pricePaise: split.taxOrDiscountPaise,
+      category: 'general',
+      assignedRoommates: billMembers.map(member => member.identity.toHexString()),
+      excludedRoommates: [],
+      exemptionReasons: {},
+    });
+  } else if (split.taxOrDiscountPaise < 0n) {
+    let discountRemaining = -split.taxOrDiscountPaise;
+    for (let index = adjustedLines.length - 1; index >= 0 && discountRemaining > 0n; index -= 1) {
+      const available = adjustedLines[index].pricePaise - 1n;
+      const applied = available > discountRemaining ? discountRemaining : available;
+      adjustedLines[index].pricePaise -= applied;
+      discountRemaining -= applied;
+    }
+  }
+  currentBillDraft = {
+    title: split.billTitle,
+    category: 'general',
+    payer: billMembers.find(member => member.identity.toHexString() === payerRow.identity.toHexString())!,
+    expenseDateMicros: BigInt(Date.now()) * 1_000n,
+    lines: adjustedLines.map(line => {
+      const participants = line.assignedRoommates.length || billMembers.length;
+      const share = line.pricePaise / BigInt(participants);
+      const remainder = line.pricePaise % BigInt(participants);
+      let participatingIndex = 0;
+      return {
+        id: line.id,
+        label: line.name,
+        amountPaise: line.pricePaise,
+        allocations: billMembers.map(member => {
+          const identity = member.identity.toHexString();
+          const exempt = line.excludedRoommates.includes(identity);
+          const participating = line.assignedRoommates.includes(identity) || (!line.assignedRoommates.length && !exempt);
+          const amountPaise = participating ? share + (participatingIndex++ === 0 ? remainder : 0n) : 0n;
+          return { member, amountPaise, exempt, reason: line.exemptionReasons[identity] || '' };
+        }),
+      };
+    }),
+  };
+  currentBillPhase = { step: 'editing', acknowledgement: { status: 'idle' } };
+  return renderBillReview(currentBillDraft, isConnected, currentBillPhase, window.matchMedia('(max-width: 720px)').matches);
+}
+
+async function executeIntent(
+  intent: AgentIntent,
+  text: string,
+  analysis: Awaited<ReturnType<typeof TabbyBrain.analyze>>,
+): Promise<{ message: Omit<ConversationMessage, 'id'>; summary: string }> {
+  if (intent === 'grocery') {
+    const purchase = text.match(/\b(?:bought|added|got|purchased|have|store|stock)\s+(\d+(?:\.\d+)?)\s*([a-zA-Z]+)?\s+(?:of\s+)?(.+)/i);
+    const pantryAddition = text.match(/\b(?:add|put|store|stock)\s+(.+?)\s+(?:to|in)\s+(?:the\s+)?pantry\b/i);
+    if (purchase || pantryAddition) {
+      const quantity = purchase ? Math.max(1, Math.round(Number(purchase[1]))) : 1;
+      const unit = purchase?.[2] || 'items';
+      const name = (purchase?.[3] || pantryAddition?.[1] || '').replace(/[.!?]+$/, '').trim();
+      const result = await addOrUpdatePantryItem(name, quantity, unit);
+      if (result.status !== 'acknowledged') throw result.status === 'rejected' ? result.error : new Error('The pantry action is waiting for a connection.');
+      const response = `Added ${quantity} ${unit} of ${name} to the shared pantry.`;
+      return { message: { role: 'assistant', agent: intent, text: response }, summary: response };
+    }
+    const plan = await AgentShopping.generateShoppingPlan(pantryData(), getRoommates(), text);
+    return { message: { role: 'assistant', agent: intent, contentHtml: renderShoppingPlan(plan) }, summary: plan.summary };
+  }
+  if (intent === 'billing') {
+    if (!attachedReceipt && !/\d/.test(text)) {
+      const response = 'Paste one item per line, such as “Rice - 450”, or attach a receipt image. I will apply the household dietary rules to the split.';
+      return { message: { role: 'assistant', agent: intent, text: response }, summary: 'Bill details requested.' };
+    }
+    const split = await AgentBilling.parseAndSplitBill(
+      { text, imageBase64: attachedReceipt, title: attachedReceiptName || 'Household expense' }, getRoommates(),
+      scopedHouseholdConfig()?.getRules() ?? [],
+    );
+    return { message: { role: 'assistant', agent: intent, contentHtml: renderSplit(split) }, summary: `Reviewed ${split.lineItems.length} bill lines.` };
+  }
+  if (intent === 'context') {
+    const answer = TabbyBrain.answerContextQuestion(text, getSharedContext());
+    const saved = await publishSharedFacts(analysis.shareableFacts);
+    const response = saved
+      ? `Saved ${saved} shared Home note${saved === 1 ? '' : 's'}.`
+      : analysis.shareableFacts.length
+        ? 'That Home note was already shared.'
+      : (answer || 'No matching shared Home note was found.');
+    return { message: { role: 'assistant', agent: intent, text: response }, summary: response };
+  }
+  if (intent === 'chef') {
+    const plan = await AgentCooking.generateRecipes(pantryData(), getRoommates(), text);
+    return { message: { role: 'assistant', agent: intent, contentHtml: renderCookingPlan(plan) }, summary: plan.headline };
+  }
+  if (!AIProvider.hasApiKey()) {
+    const response = 'AI is not connected. Core pantry, bill, reminder, and Home note tools remain available.';
+    return { message: { role: 'assistant', agent: 'general', text: response }, summary: response };
+  }
+  const recentConversation = conversation.slice(-10).map(message => `${message.role}: ${message.text || 'Structured household result'}`).join('\n');
+  const householdContext = getSharedContext().slice(0, 12).map(memory => `${memory.subjectName}: ${memory.value}`).join('; ');
+  const generated = await AIProvider.generateText(
+    `Recent conversation:\n${recentConversation}\n\nCurrent request:\n${text}`,
+    `You are Tabby, a concise household coordination assistant. Do not claim an action happened unless it was performed. Shared household context: ${householdContext || 'No shared memories yet.'}`,
+    attachedReceipt,
+  );
+  const response = generated || 'The AI connection could not complete that request.';
+  return { message: { role: 'assistant', agent: 'general', text: response }, summary: response.slice(0, 120) };
 }
 
 async function routeMessage(text: string) {
   const personalAnswer = TabbyBrain.answerPersonalQuestion(text, currentName());
-  if (personalAnswer) {
-    setRoute('general', false);
-    addMessage({ role: 'assistant', agent: 'general', text: personalAnswer });
-    return;
-  }
-
+  if (personalAnswer) return void addMessage({ role: 'assistant', agent: 'general', text: personalAnswer });
   setRoute('general', true);
-  const analysis = await TabbyBrain.analyze(text, conversation, getSharedContext());
-  TabbyBrain.savePrivateFacts(currentIdentity || 'local', analysis.privateFacts);
-  publishSharedFacts(analysis.shareableFacts);
-  setRoute(analysis.intent, true);
-
+  const progress = addMessage({ role: 'assistant', agent: 'general', pending: true, progressLabel: 'Tabby is understanding your request' }, false);
   try {
-    if (analysis.intent === 'grocery') {
-      const purchase = text.match(/\b(?:bought|added|got|purchased|have|store|stock)\s+(\d+(?:\.\d+)?)\s*([a-zA-Z]+)?\s+(?:of\s+)?(.+)/i);
-      const pantryAddition = text.match(/\b(?:add|put|store|stock)\s+(.+?)\s+(?:to|in)\s+(?:the\s+)?pantry\b/i);
-      if (purchase || pantryAddition) {
-        const quantity = purchase ? Math.max(1, Math.round(Number(purchase[1]))) : 1;
-        const unit = purchase?.[2] || 'items';
-        const name = (purchase?.[3] || pantryAddition?.[1] || '').replace(/[.!?]+$/, '').trim();
-        addOrUpdatePantryItem(name, quantity, unit);
-        addMessage({ role: 'assistant', agent: 'grocery', text: `Added ${quantity} ${unit} of ${name} to the shared pantry.` });
-      } else {
-        const plan = await AgentShopping.generateShoppingPlan(pantryData(), getRoommates(), text);
-        addMessage({ role: 'assistant', agent: 'grocery', contentHtml: renderShoppingPlan(plan) });
+    const analysis = await TabbyBrain.analyze(text, conversation, getSharedContext());
+    TabbyBrain.savePrivateFacts(currentIdentity || 'local', analysis.privateFacts);
+    const routes = pendingRoutePresentation(analysis.intents);
+    updateMessage(progress.id, { routes, progressLabel: 'Household routes are working in order' });
+    const content: string[] = [];
+    for (const [index, intent] of analysis.intents.entries()) {
+      setRoute(intent, true);
+      try {
+        const result = await executeIntent(intent, text, analysis);
+        content.push(`<section class="inline-route-result route-${intent}">${result.message.contentHtml || `<p>${escapeHtml(result.message.text || '')}</p>`}</section>`);
+        routes[index] = { intent, status: 'acknowledged', summary: result.summary };
+      } catch (cause) {
+        const error = cause instanceof Error ? cause.message : String(cause);
+        content.push(`<section class="inline-route-result route-${intent} route-failed"><p>${escapeHtml(error)}</p></section>`);
+        routes[index] = { intent, status: 'failed', error };
       }
-    } else if (analysis.intent === 'billing') {
-      if (!attachedReceipt && !/\d/.test(text)) {
-        addMessage({ role: 'assistant', agent: 'billing', text: 'Paste one item per line, such as “Rice - 450”, or attach a receipt image. I will apply the household dietary rules to the split.' });
-      } else {
-        const split = await AgentBilling.parseAndSplitBill(
-          { text, imageBase64: attachedReceipt, title: attachedReceiptName || 'Household expense' },
-          getRoommates(),
-        );
-        addMessage({ role: 'assistant', agent: 'billing', contentHtml: renderSplit(split) });
-      }
-    } else if (analysis.intent === 'context' || analysis.shareableFacts.length > 0) {
-      const answer = TabbyBrain.answerContextQuestion(text, getSharedContext());
-      const responseText = analysis.shareableFacts.length > 0
-        ? `Noted! I captured these insights in your household context: ${analysis.shareableFacts.map(f => `"${f.value}"`).join(', ')}.`
-        : (answer || 'I added that preference to the shared household context. Other housemates can ask me about it when planning food or expenses.');
-      addMessage({
-        role: 'assistant',
-        agent: 'context',
-        text: responseText,
-      });
-    } else if (analysis.intent === 'chef') {
-      const plan = await AgentCooking.generateRecipes(pantryData(), getRoommates(), text);
-      addMessage({ role: 'assistant', agent: 'chef', contentHtml: renderCookingPlan(plan) });
-    } else {
-      if (!AIProvider.hasApiKey()) {
-        addMessage({
-          role: 'assistant',
-          agent: 'general',
-          text: 'OpenAI is not connected yet. Open Settings, add an API key, and I will answer general household questions through the backend.',
-        });
-        return;
-      }
-      const recentConversation = conversation.slice(-10)
-        .map(message => `${message.role}: ${message.text || 'Structured household result'}`)
-        .join('\n');
-      const householdContext = getSharedContext().slice(0, 12)
-        .map(memory => `${memory.subjectName}: ${memory.value}`)
-        .join('; ');
-      const verifiedName = currentName();
-      const generated = await AIProvider.generateText(
-        `Recent conversation:\n${recentConversation}\n\nCurrent request:\n${text}`,
-        `You are Tabby, a concise household coordination assistant. Answer practical home questions. If an image is provided, analyze and describe its relevant contents. Do not claim an action happened unless it was performed. The current member's verified display name is ${verifiedName || 'not set because onboarding is incomplete'}. Never present a database identity or hexadecimal identifier as a person's name. Shared household context: ${householdContext || 'No shared memories yet.'}`,
-        attachedReceipt,
-      );
-      addMessage({
-        role: 'assistant',
-        agent: 'general',
-        text: generated || 'OpenAI could not complete that request. Check the saved model and API key in Settings, then try again.',
-      });
+      updateMessage(progress.id, { agent: intent, routes: [...routes] });
     }
-  } catch (error) {
-    addMessage({
-      role: 'assistant',
-      agent: analysis.intent,
-      text: error instanceof Error ? error.message : 'That request could not be completed. Try adding a little more detail.',
+    completeProgressMessage(progress.id, {
+      role: 'assistant', agent: analysis.intents.at(-1) || 'general', contentHtml: content.join(''), routes,
     });
   } finally {
-    setRoute(analysis.intent, false);
+    setRoute('idle', false);
     attachedReceipt = undefined;
     attachedReceiptName = '';
     (document.querySelector<HTMLInputElement>('#receipt-input')!).value = '';
@@ -1080,63 +1605,180 @@ async function routeMessage(text: string) {
   }
 }
 
+async function waitForSubscribed<T>(read: () => T | undefined, message: string, timeoutMs = 8_000): Promise<T> {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const value = read();
+    if (value !== undefined) return value;
+    await new Promise(resolve => window.setTimeout(resolve, 50));
+  }
+  throw new Error(message);
+}
+
+async function recordCurrentBill() {
+  if (!currentBillDraft) return;
+  currentBillPhase = startBillRecord(currentBillDraft, isConnected && navigator.onLine !== false);
+  renderConversation();
+  if (currentBillPhase.step !== 'creating-review') return;
+  try {
+    const existing = new Set(householdGateway.billReviews().map(review => review.id));
+    await householdGateway.executeHouseholdAction(createBillReviewAction(currentBillDraft));
+    const review = await waitForSubscribed(
+      () => householdGateway.billReviews().find(candidate => !existing.has(candidate.id) && candidate.title === currentBillDraft!.title),
+      'The bill review was sent but its acknowledgement did not arrive.',
+    );
+    currentBillPhase = billReviewAcknowledged(review.id);
+    renderConversation();
+    for (const action of billLineActions(currentBillDraft, review.id)) await householdGateway.executeHouseholdAction(action);
+    const subscribedLines = await waitForSubscribed(() => {
+      const rows = householdGateway.billLines().filter(line => line.billReviewId === review.id);
+      return rows.length === currentBillDraft!.lines.length ? rows : undefined;
+    }, 'The bill lines were sent but their acknowledgements did not arrive.');
+    currentBillPhase = billLinesAcknowledged(review.id);
+    renderConversation();
+    const lineIds = new Map(subscribedLines.map(line => [line.lineKey, line.id]));
+    const allocations = billAllocationActions(currentBillDraft, review.id, lineIds);
+    for (const action of allocations) await householdGateway.executeHouseholdAction(action);
+    await waitForSubscribed(() => {
+      const rows = householdGateway.billLineAllocations().filter(allocation => allocation.billReviewId === review.id);
+      return rows.length === allocations.length ? rows : undefined;
+    }, 'The bill allocations were sent but their acknowledgements did not arrive.');
+    currentBillPhase = billAllocationsAcknowledged(review.id);
+    renderConversation();
+    await householdGateway.executeHouseholdAction(recordReviewedBillAction(review.id));
+    currentBillPhase = billRecordingAcknowledged(review.id);
+    renderConversation();
+    showToast('The itemized bill was acknowledged and recorded.');
+  } catch (cause) {
+    currentBillPhase = billRecordRejected(currentBillPhase, cause instanceof Error ? cause.message : String(cause));
+    renderConversation();
+  }
+}
+
 function bindMessageActions() {
   document.querySelectorAll<HTMLButtonElement>('[data-add-pantry]').forEach(button => {
-    button.onclick = () => {
+    button.disabled = !isConnected;
+    button.setAttribute('aria-disabled', String(!isConnected));
+    button.onclick = async () => {
       const name = button.dataset.addPantry || '';
       const qty = Math.max(1, Math.round(Number(button.dataset.quantity)));
       const unit = button.dataset.unit || 'items';
-      addOrUpdatePantryItem(name, qty, unit);
-      button.textContent = 'Added';
+      button.textContent = 'Adding';
       button.disabled = true;
-      showToast(`Added ${qty} ${unit} of ${name} to the pantry.`);
+      const result = await addOrUpdatePantryItem(name, qty, unit);
+      if (result.status === 'acknowledged') {
+        button.textContent = 'Added';
+        showToast(`Added ${qty} ${unit} of ${name} to the pantry.`);
+      } else {
+        button.textContent = 'Add';
+        button.disabled = !isConnected;
+        showToast(result.status === 'rejected' ? result.error.message : 'Waiting for a connection.', 'error');
+      }
     };
   });
 
   document.querySelectorAll<HTMLButtonElement>('[data-cook-recipe]').forEach(button => {
-    button.onclick = () => {
+    button.disabled = !isConnected;
+    button.setAttribute('aria-disabled', String(!isConnected));
+    button.onclick = async () => {
       const recipe = currentRecipes.get(button.dataset.cookRecipe!);
       if (!recipe) return;
       const pantry = pantryData();
-      let updated = 0;
-      for (const ingredient of recipe.ingredients.filter(item => item.inPantry)) {
+      const changes = recipe.ingredients.filter(item => item.inPantry).flatMap(ingredient => {
         const match = pantry.find(item => {
           const pantryName = item.name.toLowerCase();
           const ingredientName = ingredient.name.toLowerCase();
           return pantryName.includes(ingredientName) || ingredientName.includes(pantryName);
         });
-        if (match && match.quantity > 0) {
-          addOrUpdatePantryItem(match.name, -1, match.unit);
-          updated += 1;
+        return match && match.quantity > 0 ? [{ name: match.name, quantityUsed: 1, unit: match.unit }] : [];
+      });
+      if (!changes.length) return showToast('No tracked pantry quantities need changing for this recipe.');
+      cookingConfirmation = createCookingConfirmation(recipe.title, changes);
+      const host = button.closest<HTMLElement>('.recipe-card') || button.parentElement;
+      const existing = host?.querySelector<HTMLElement>('[data-cooking-confirmation]');
+      if (existing) existing.outerHTML = renderCookingConfirmation(cookingConfirmation, isConnected);
+      else host?.insertAdjacentHTML('beforeend', renderCookingConfirmation(cookingConfirmation, isConnected));
+      const confirm = host?.querySelector<HTMLButtonElement>('[data-confirm-cooking]');
+      confirm?.addEventListener('click', async () => {
+        if (!cookingConfirmation) return;
+        confirm.disabled = true;
+        for (const action of confirmCookingActions(cookingConfirmation, isConnected)) {
+          if (action.reducer !== 'addPantryItem') continue;
+          const result = await commandCoordinator.execute(`cooking:${recipe.id}:${action.payload.name}`, () => householdGateway.executeHouseholdAction(action));
+          if (result.status !== 'acknowledged') {
+            showToast(result.status === 'rejected' ? result.error.message : 'Reconnect before updating the pantry.', 'error');
+            confirm.disabled = false;
+            return;
+          }
+          cookingConfirmation = cookingAcknowledged(cookingConfirmation, action.payload.name);
         }
-      }
-      showToast(updated ? `Started ${recipe.title}. Pantry quantities were adjusted.` : `Started ${recipe.title}. No tracked pantry quantities needed changing.`);
-      button.textContent = 'Cooking';
-      button.disabled = true;
+        const rendered = host?.querySelector<HTMLElement>('[data-cooking-confirmation]');
+        if (rendered) rendered.outerHTML = renderCookingConfirmation(cookingConfirmation, isConnected);
+        showToast(`Started ${recipe.title}. Pantry changes were acknowledged.`);
+      });
     };
   });
 
   document.querySelectorAll<HTMLButtonElement>('[data-record-expense]').forEach(button => {
-    button.onclick = () => {
+    button.disabled = !isConnected;
+    button.setAttribute('aria-disabled', String(!isConnected));
+    button.onclick = async () => {
       if (!currentSplit || !isConnected) return showToast('Connect to the shared home before recording an expense.', 'error');
-      connection.reducers.recordExpense({ title: currentSplit.billTitle, amountPaise: currentSplit.totalAmountPaise });
-      button.textContent = 'Recorded';
+      button.textContent = 'Recording';
       button.disabled = true;
-      showToast('The household expense was recorded.');
+      const result = await commandCoordinator.execute(`expense:${Date.now()}`, async () => {
+        await householdGateway.recordExpense({ title: currentSplit!.billTitle, amountPaise: currentSplit!.totalAmountPaise });
+      });
+      if (result.status === 'acknowledged') {
+        button.textContent = 'Recorded';
+        showToast('The household expense was recorded.');
+      } else {
+        button.textContent = 'Record household expense';
+        button.disabled = !isConnected;
+        showToast(result.status === 'rejected' ? result.error.message : 'Waiting for a connection.', 'error');
+      }
     };
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-bill-review]').forEach(review => {
+    review.querySelector<HTMLSelectElement>('[data-bill-payer]')?.addEventListener('change', event => {
+      if (!currentBillDraft) return;
+      const identity = (event.currentTarget as HTMLSelectElement).value;
+      const member = currentBillDraft.lines.flatMap(line => line.allocations.map(allocation => allocation.member))
+        .find(candidate => candidate.identity.toHexString() === identity);
+      if (member) currentBillDraft = setBillPayer(currentBillDraft, member);
+    });
+    review.querySelector<HTMLInputElement>('[data-bill-date]')?.addEventListener('change', event => {
+      if (!currentBillDraft) return;
+      const date = new Date(`${(event.currentTarget as HTMLInputElement).value}T12:00:00`);
+      if (!Number.isNaN(date.getTime())) currentBillDraft = setBillDate(currentBillDraft, BigInt(date.getTime()) * 1_000n);
+    });
+    review.querySelectorAll<HTMLInputElement>('[data-allocation-member]').forEach(input => {
+      const apply = () => {
+        if (!currentBillDraft) return;
+        const lineId = input.closest<HTMLElement>('[data-line-id]')?.dataset.lineId || '';
+        const member = currentBillDraft.lines.flatMap(line => line.allocations.map(allocation => allocation.member))
+          .find(candidate => candidate.identity.toHexString() === input.dataset.allocationMember);
+        const exempt = input.closest('label')?.querySelector<HTMLInputElement>('[data-allocation-exempt]')?.checked || false;
+        if (member) currentBillDraft = assignBillLine(currentBillDraft, lineId, member, BigInt(input.value || '0'), { exempt });
+      };
+      input.addEventListener('change', apply);
+      input.closest('label')?.querySelector<HTMLInputElement>('[data-allocation-exempt]')?.addEventListener('change', apply);
+    });
+    review.querySelector<HTMLButtonElement>('[data-record-bill]')?.addEventListener('click', () => void recordCurrentBill());
   });
 }
 
 function renderHeaderAndRailBadges() {
   const currentUser = AuthManager.getCurrentUser();
-  const activeFlat = ResidenceManager.getActiveFlat();
+  const activeFlat = activeHomeSelection();
   const signedInName = currentUser.isLoggedIn ? currentUser.name.trim() : '';
 
   // Header badges
   const headerFlatText = document.querySelector<HTMLElement>('#header-flat-text');
   const headerUserText = document.querySelector<HTMLElement>('#header-user-text');
   if (headerFlatText) {
-    headerFlatText.textContent = `${activeFlat.flatName} · ${activeFlat.flatNumber}`;
+    headerFlatText.textContent = activeFlat.flatId ? `${activeFlat.flatName} · ${activeFlat.flatNumber}` : 'No shared home selected';
   }
   if (headerUserText) {
     headerUserText.textContent = signedInName || 'Account not set up';
@@ -1152,13 +1794,15 @@ function renderHeaderAndRailBadges() {
   if (railUserName) railUserName.textContent = signedInName || 'Account';
   if (railUserPhone) railUserPhone.textContent = signedInName ? (currentUser.phone || 'Phone not set') : 'Set up your profile';
   if (railUserAvatar) railUserAvatar.textContent = signedInName ? signedInName.slice(0, 1).toUpperCase() : '?';
-  if (railFlatName) railFlatName.textContent = activeFlat.flatName;
-  if (railResidenceName) railResidenceName.textContent = `${activeFlat.flatNumber}, ${activeFlat.residenceName}`;
+  if (railFlatName) railFlatName.textContent = activeFlat.flatName || 'Choose a home';
+  if (railResidenceName) railResidenceName.textContent = activeFlat.flatId ? `${activeFlat.flatNumber}, ${activeFlat.residenceName}` : 'No shared home selected';
 }
 
 function renderAll() {
   renderContextPanel();
+  renderPantryRoute();
   renderHeaderAndRailBadges();
+  const offline = !isConnected || navigator.onLine === false;
   const status = document.querySelector('#status-text')!;
   status.textContent = isDatabaseSynchronized
     ? 'Pantry checked just now'
@@ -1166,30 +1810,37 @@ function renderAll() {
       ? 'Pantry is checking the home'
       : isConnecting
         ? 'Pantry is reconnecting'
-        : 'Offline — local chat still works';
+        : 'Offline: private messages remain on this device';
   document.querySelector('.status-dot')?.classList.toggle('offline', !isConnected);
+  const offlineBanner = document.querySelector<HTMLElement>('#offline-banner');
+  if (offlineBanner) offlineBanner.hidden = !offline;
+  const shelfOffline = document.querySelector<HTMLElement>('#shelf-offline');
+  if (shelfOffline) shelfOffline.hidden = !offline;
+  document.querySelector('#context-panel')?.classList.toggle('is-offline', offline);
+  document.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>('[data-shared-action], #quick-pantry-form input, #quick-pantry-form button, #quick-rule-form input, #quick-rule-form select, #quick-rule-form button')
+    .forEach(control => {
+      control.disabled = offline;
+      control.setAttribute('aria-disabled', String(offline));
+      if (offline) control.title = 'Unavailable while offline';
+      else control.removeAttribute('title');
+    });
+  bindMessageActions();
+  appStore.update({
+    connectivity: isConnected ? 'online' : isConnecting ? 'connecting' : 'offline',
+    synchronized: isDatabaseSynchronized,
+  });
 }
 
 function syncAiStatus() {
   const status = [...connection.db.myAiStatus.iter()][0];
-  const directKey = AIProvider.getApiKey();
   const isBackendConfigured = Boolean(status?.configured);
   const isBackendVerified = Boolean(status?.verified);
   const modelName = status?.model || AIProvider.getModelName() || (import.meta.env.VITE_OPENAI_MODEL as string | undefined)?.trim() || 'gpt-5.6-sol';
 
-  if (isConnected && directKey && !isBackendConfigured) {
-    try {
-      connection.reducers.setAiConfig({ apiKey: directKey, model: modelName });
-    } catch (err) {
-      console.warn('Auto-syncing AI config to backend notice:', err);
-    }
-  }
-
   AIProvider.setConfigured(isBackendConfigured, modelName);
 
-  const hasAnyKey = AIProvider.hasApiKey();
-  const isVerified = isBackendVerified || hasAnyKey;
-  const isConfigured = isBackendConfigured || hasAnyKey;
+  const isVerified = isBackendVerified;
+  const isConfigured = isBackendConfigured;
 
   document.querySelector('#open-ai-settings')!.textContent = 'Settings';
   document.querySelector('#mobile-ai-settings')!.textContent = isVerified
@@ -1203,6 +1854,11 @@ const DATABASE_RECONNECT_BASE_DELAY_MS = 1_000;
 const DATABASE_RECONNECT_MAX_DELAY_MS = 30_000;
 
 let connection!: DbConnection;
+function currentActiveHomeId(): bigint | null {
+  const value = activeHomeSelection().flatId;
+  return /^\d+$/.test(value) ? BigInt(value) : null;
+}
+const householdGateway = createHouseholdGateway(() => connection, currentActiveHomeId);
 let databaseToken = getStoredDatabaseToken();
 let connectionGeneration = 0;
 let reconnectAttempt = 0;
@@ -1233,32 +1889,50 @@ function attachDatabaseListeners(conn: DbConnection) {
     if (conn === connection) callback();
   };
   const syncResidences = ifCurrent(() => {
-    ResidenceManager.syncFromDb([...conn.db.residence.iter()], [...conn.db.flat.iter()]);
     renderAll();
   });
 
-  conn.db.residence.onInsert(syncResidences);
-  conn.db.residence.onUpdate(syncResidences);
-  conn.db.flat.onInsert(syncResidences);
-  conn.db.flat.onUpdate(syncResidences);
-  conn.db.flatRule.onInsert(ifCurrent(renderAll));
-  conn.db.flatRule.onUpdate(ifCurrent(renderAll));
-  conn.db.flatRule.onDelete(ifCurrent(renderAll));
-  conn.db.member.onInsert(ifCurrent(() => {
+  conn.db.myResidences.onInsert(syncResidences);
+  conn.db.myResidences.onUpdate(syncResidences);
+  conn.db.myHomes.onInsert(syncResidences);
+  conn.db.myHomes.onUpdate(syncResidences);
+  const syncActiveHome = ifCurrent(() => {
+    renderAll();
+    ensureConversation();
+  });
+  conn.db.myHomeMemberships.onInsert(syncActiveHome);
+  conn.db.myHomeMemberships.onUpdate(syncActiveHome);
+  conn.db.myHomeMemberships.onDelete(syncActiveHome);
+  conn.db.myFlatRules.onInsert(ifCurrent(renderAll));
+  conn.db.myFlatRules.onUpdate(ifCurrent(renderAll));
+  conn.db.myFlatRules.onDelete(ifCurrent(renderAll));
+  conn.db.myMembers.onInsert(ifCurrent(() => {
     renderAll();
     if (isPeopleSynchronized && isDatabaseSynchronized) ensureConversation();
   }));
-  conn.db.member.onUpdate(ifCurrent(renderAll));
-  conn.db.member.onDelete(ifCurrent(renderAll));
-  conn.db.pantryItem.onInsert(ifCurrent(renderAll));
-  conn.db.pantryItem.onUpdate(ifCurrent(renderAll));
-  conn.db.pantryItem.onDelete(ifCurrent(renderAll));
-  conn.db.sharedMemory.onInsert(ifCurrent(renderAll));
-  conn.db.sharedMemory.onUpdate(ifCurrent(renderAll));
-  conn.db.expense.onInsert(ifCurrent(renderAll));
-  conn.db.expense.onUpdate(ifCurrent(renderAll));
-  conn.db.expenseSplit.onInsert(ifCurrent(renderAll));
-  conn.db.expenseSplit.onUpdate(ifCurrent(renderAll));
+  conn.db.myMembers.onUpdate(ifCurrent(renderAll));
+  conn.db.myMembers.onDelete(ifCurrent(renderAll));
+  conn.db.myPantryItems.onInsert(ifCurrent(renderAll));
+  conn.db.myPantryItems.onUpdate(ifCurrent(renderAll));
+  conn.db.myPantryItems.onDelete(ifCurrent(renderAll));
+  conn.db.myPantryItemDetails.onInsert(ifCurrent(renderAll));
+  conn.db.myPantryItemDetails.onUpdate(ifCurrent(renderAll));
+  conn.db.myPantryItemDetails.onDelete(ifCurrent(renderAll));
+  conn.db.mySharedMemories.onInsert(ifCurrent(renderAll));
+  conn.db.mySharedMemories.onUpdate(ifCurrent(renderAll));
+  conn.db.myExpenses.onInsert(ifCurrent(renderAll));
+  conn.db.myExpenses.onUpdate(ifCurrent(renderAll));
+  conn.db.myExpenseSplits.onInsert(ifCurrent(renderAll));
+  conn.db.myExpenseSplits.onUpdate(ifCurrent(renderAll));
+  conn.db.myReminders.onInsert(ifCurrent(renderAll));
+  conn.db.myReminders.onUpdate(ifCurrent(renderAll));
+  conn.db.myReminders.onDelete(ifCurrent(renderAll));
+  conn.db.myBillReviews.onInsert(ifCurrent(renderAll));
+  conn.db.myBillReviews.onUpdate(ifCurrent(renderAll));
+  conn.db.myBillLines.onInsert(ifCurrent(renderAll));
+  conn.db.myBillLines.onUpdate(ifCurrent(renderAll));
+  conn.db.myBillLineAllocations.onInsert(ifCurrent(renderAll));
+  conn.db.myBillLineAllocations.onUpdate(ifCurrent(renderAll));
   conn.db.myAiStatus.onInsert(ifCurrent(syncAiStatus));
   conn.db.myAiStatus.onUpdate(ifCurrent(syncAiStatus));
   conn.db.myAiStatus.onDelete(ifCurrent(syncAiStatus));
@@ -1319,6 +1993,10 @@ function connectToDatabase() {
       databaseToken = token;
       storeDatabaseToken(token);
       currentIdentity = identity.toHexString();
+      AIProvider.setIdentityScope(currentIdentity);
+      const accountTokenKey = `${tokenKey}:${currentIdentity}`;
+      localStorage.setItem(accountTokenKey, token);
+      AuthManager.observeConnection({ identity: currentIdentity, tokenLabel: accountTokenKey });
       TabbyBrain.savePrivateFacts(currentIdentity, TabbyBrain.getPrivateFacts('local'));
       connectionAttemptInFlight = false;
       isConnecting = false;
@@ -1328,15 +2006,9 @@ function connectToDatabase() {
       renderAll();
 
       const [peopleSubscription, householdSubscription] = createSubscriptionGroups(
-        tables.member,
+        householdSubscriptionTables.people,
         [
-          tables.residence,
-          tables.flat,
-          tables.flatRule,
-          tables.pantryItem,
-          tables.expense,
-          tables.expenseSplit,
-          tables.sharedMemory,
+          ...householdSubscriptionTables.household,
           tables.myConversations,
           tables.myConversationMessages,
           tables.myAiStatus,
@@ -1349,7 +2021,7 @@ function connectToDatabase() {
 
           isPeopleSynchronized = true;
           const user = AuthManager.getCurrentUser();
-          const isJoined = [...ctx.db.member.iter()]
+          const isJoined = [...ctx.db.myMembers.iter()]
             .some(member => member.identity.toHexString() === currentIdentity);
           if (isJoined && user && user.name) {
             try {
@@ -1381,18 +2053,10 @@ function connectToDatabase() {
 
           reconnectAttempt = 0;
           isDatabaseSynchronized = true;
-          try {
-            ResidenceManager.syncFromDb(
-              [...ctx.db.residence.iter()],
-              [...ctx.db.flat.iter()],
-            );
-          } catch (error) {
-            console.warn('Syncing residences from SpacetimeDB:', error);
-          }
-
           if (isPeopleSynchronized) ensureConversation();
           syncAiStatus();
           renderAll();
+          void flushActiveOutbox();
         })
         .onError(errorContext => {
           if (generation !== connectionGeneration) return;
@@ -1453,6 +2117,391 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') reconnectDatabaseImmediately();
 });
 
+function hydrateIdentityState(route: IdentityRoute): IdentityFeatureState {
+  const user = AuthManager.getCurrentUser();
+  const active = activeHomeSelection();
+  const residences = isDatabaseSynchronized ? householdGateway.residences() : [];
+  const homes = isDatabaseSynchronized ? householdGateway.homes() : [];
+  const profile = scopedHouseholdConfig()?.getProfile(currentIdentity || 'local', user.name || currentName()) ?? {
+    identityHex: currentIdentity || 'local',
+    displayName: user.name || currentName(),
+    dietaryTags: [],
+    cookingHabits: [],
+    customSplitExclusions: [],
+  };
+  const homeSettings = isDatabaseSynchronized && active.flatId
+    ? [...connection.db.myHomeSettings.iter()].find(row => row.flatId.toString() === active.flatId)
+    : undefined;
+  return {
+    ...identityState,
+    route,
+    request: 'idle',
+    message: undefined,
+    profile: {
+      displayName: user.name || profile.displayName,
+      phone: user.phone || '',
+      email: user.email || '',
+      dietaryTags: [...profile.dietaryTags],
+      cookingHabits: [...profile.cookingHabits],
+    },
+    homes: homes.map(home => ({
+      id: home.id,
+      name: home.name,
+      label: home.flatNumber,
+      residenceName: residences.find(residence => residence.id === home.residenceId)?.name || '',
+      active: String(home.id) === active.flatId,
+    })),
+    accounts: AuthManager.getSavedAccounts().map(account => ({
+      identity: account.identity || '',
+      displayName: account.name,
+      detail: account.phone || account.email || 'Connected account',
+      active: account.identity === currentIdentity,
+    })),
+    basics: homeSettings ? {
+      quietHoursStart: homeSettings.quietHoursStart,
+      quietHoursEnd: homeSettings.quietHoursEnd,
+      defaultBillingSplit: homeSettings.defaultBillingSplit,
+      invitesEnabled: homeSettings.invitesEnabled,
+    } : identityState.basics,
+    firstTaskItems: route === 'first-task' && identityState.firstTaskItems.length === 0
+      ? FIRST_TASK_STARTERS.map(item => ({ ...item }))
+      : identityState.firstTaskItems,
+    ai: lastAiConnectionError
+      ? { kind: 'error', model: lastAiConnectionError.model, message: lastAiConnectionError.message }
+      : AIProvider.hasApiKey()
+      ? { kind: 'connected', model: AIProvider.getModelName() }
+      : { kind: 'disconnected', model: AIProvider.getModelName() },
+  };
+}
+
+function seedFirstTaskChoices(state: IdentityFeatureState): IdentityFeatureState {
+  return state.firstTaskItems.length
+    ? state
+    : { ...state, firstTaskItems: FIRST_TASK_STARTERS.map(item => ({ ...item })) };
+}
+
+async function reconnectSavedAccount(identity: string) {
+  const tokenLabel = AuthManager.switchAccount(identity);
+  const selectedToken = tokenLabel ? localStorage.getItem(tokenLabel) : null;
+  if (!selectedToken) throw new Error('The saved account connection is not available on this device.');
+  databaseToken = selectedToken;
+  isConnected = false;
+  connectToDatabase();
+  const started = Date.now();
+  while ((!isConnected || currentIdentity !== identity) && Date.now() - started < 12_000) {
+    await new Promise(resolve => window.setTimeout(resolve, 50));
+  }
+  if (!isConnected || currentIdentity !== identity) throw new Error('The saved account did not reconnect.');
+}
+
+function clearDeletedIdentityArtifacts(identity: string, tokenLabel?: string) {
+  const normalized = identity.trim().toLowerCase();
+  const encoded = encodeURIComponent(normalized);
+  if (!encoded) return;
+  const registryKey = conversationRegistryKey(identity);
+  let conversationIds: string[] = [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(registryKey) || '[]');
+    if (Array.isArray(parsed)) conversationIds = parsed.filter(value => typeof value === 'string');
+  } catch {}
+  const activeId = localStorage.getItem(`tabby_active_conversation:${identity}`);
+  if (activeId) conversationIds.push(activeId);
+
+  const scopedPrefixes = [
+    `tabby_local_pantry:${encoded}:`,
+    `tabby_local_rules:${encoded}:`,
+    `tabby_household_v2:${encoded}:`,
+    `tabby_outbox_v1:${encoded}:`,
+  ];
+  for (const key of Object.keys(localStorage)) {
+    if (scopedPrefixes.some(prefix => key.startsWith(prefix))) {
+      if (key.startsWith(`tabby_outbox_v1:${encoded}:`)) {
+        try {
+          const commands = JSON.parse(localStorage.getItem(key) || '[]');
+          if (Array.isArray(commands)) commands.forEach(command => command?.id && localStorage.removeItem(`tabby_outbox_routed:${command.id}`));
+        } catch {}
+      }
+      localStorage.removeItem(key);
+    }
+  }
+  for (const id of new Set(conversationIds)) localStorage.removeItem(`tabby_convo:${id}`);
+  if (conversationIds.includes(localStorage.getItem('tabby_active_conversation_default') || '')) {
+    localStorage.removeItem('tabby_active_conversation_default');
+  }
+  localStorage.removeItem(registryKey);
+  localStorage.removeItem(`tabby_active_conversation:${identity}`);
+  localStorage.removeItem(`tabby_brain_private_v1:${identity}`);
+  if (identity !== normalized) localStorage.removeItem(`tabby_brain_private_v1:${normalized}`);
+  localStorage.removeItem(`tabby_conversation_delivery_v1:${encoded}`);
+  if (tokenLabel) localStorage.removeItem(tokenLabel);
+  for (const scope of [...outboxes.keys()]) if (scope.toLowerCase().startsWith(`${normalized}:`)) outboxes.delete(scope);
+}
+
+function readIdentityDraft(): void {
+  const form = document.querySelector<HTMLFormElement>('#identity-flow-form');
+  if (!form) return;
+  const data = new FormData(form);
+  const text = (name: string) => String(data.get(name) || '').trim();
+  if (identityState.route === 'profile') {
+    identityState = { ...identityState, profile: {
+      displayName: text('displayName'),
+      phone: text('phone'),
+      email: text('email'),
+      dietaryTags: text('dietaryTags').split(',').map(value => value.trim()).filter(Boolean),
+      cookingHabits: text('cookingHabits').split(',').map(value => value.trim()).filter(Boolean),
+    } };
+  } else if (identityState.route === 'create-home') {
+    identityState = { ...identityState, createHome: {
+      residenceName: text('residenceName'), address: text('address'), homeName: text('homeName'),
+      homeLabel: text('homeLabel'), displayName: text('homeDisplayName'),
+    } };
+  } else if (identityState.route === 'bring-house-together') {
+    identityState = { ...identityState, basics: {
+      quietHoursStart: text('quietHoursStart'), quietHoursEnd: text('quietHoursEnd'),
+      defaultBillingSplit: text('defaultBillingSplit') || 'equal',
+      invitesEnabled: data.get('invitesEnabled') === 'on',
+    } };
+  } else if (identityState.route === 'delete-account') {
+    identityState = { ...identityState, deletionInput: text('deletionInput') };
+  } else if (identityState.route === 'first-task') {
+    const selected = new Set([...form.querySelectorAll<HTMLInputElement>('[data-first-item]:checked')].map(input => input.dataset.firstItem));
+    identityState = { ...identityState, firstTaskItems: identityState.firstTaskItems.map(item => ({ ...item, selected: selected.has(item.id) })) };
+  }
+}
+
+function identityPorts(): IdentityPorts {
+  return createSpacetimeIdentityPorts(() => connection, {
+    async forgetCurrentAccount() {
+      const deleted = AuthManager.getCurrentUser();
+      const deletedIdentity = deleted.identity || currentIdentity;
+      clearDeletedIdentityArtifacts(deletedIdentity, deleted.tokenLabel);
+      if (deletedIdentity) AIProvider.clearIdentityScope(deletedIdentity);
+      const forgotten = AuthManager.forgetCurrentAccount();
+      if (forgotten?.tokenLabel) localStorage.removeItem(forgotten.tokenLabel);
+      localStorage.removeItem(tokenKey);
+      databaseToken = undefined;
+      currentIdentity = '';
+      isConnected = false;
+      isConnecting = false;
+      connectionGeneration += 1;
+      connection.disconnect();
+      activeConversationId = crypto.randomUUID();
+      conversation = [welcomeMessage];
+      conversationFeatureState = createConversationState();
+    },
+    async saveProfile(profile) {
+      const current = AuthManager.getCurrentUser();
+      AuthManager.saveUser({ ...current, name: profile.displayName, phone: profile.phone, email: profile.email, isLoggedIn: true });
+      scopedHouseholdConfig()?.saveProfile({
+        identityHex: currentIdentity,
+        displayName: profile.displayName,
+        dietaryTags: profile.dietaryTags as DietaryTag[],
+        cookingHabits: profile.cookingHabits,
+        customSplitExclusions: [],
+      });
+      if (currentIdentityHasMembership()) await connection.reducers.setDisplayName({ displayName: profile.displayName });
+    },
+    async saveFirstTaskItems(items) {
+      for (const item of items) {
+        await householdGateway.executeHouseholdAction({ reducer: 'addPantryItem', payload: { name: item.label, quantity: 1, unit: 'item' } });
+      }
+    },
+    async switchAccount(identity) {
+      await reconnectSavedAccount(identity);
+    },
+    async signOut() {
+      AuthManager.logout();
+      localStorage.removeItem(tokenKey);
+      databaseToken = undefined;
+      currentIdentity = '';
+      isConnected = false;
+      isConnecting = false;
+      connectionGeneration += 1;
+      connection.disconnect();
+    },
+    async beginRecovery(identity) {
+      const saved = AuthManager.getSavedAccounts();
+      const requested = identity ? saved.find(account => account.identity === identity && account.tokenLabel && localStorage.getItem(account.tokenLabel)) : undefined;
+      const available = requested || saved.find(account => account.identity && account.tokenLabel && localStorage.getItem(account.tokenLabel));
+      if (!available?.identity) throw new Error('No saved account connection is available on this device.');
+      await reconnectSavedAccount(available.identity);
+    },
+    async connectAi(input) {
+      const connected = await AIProvider.testConnection(input.apiKey, input.model);
+      if (!connected) {
+        lastAiConnectionError = { model: input.model, message: 'The AI provider could not confirm this connection. Nothing was saved.' };
+        throw new Error(lastAiConnectionError.message);
+      }
+      try {
+        await connection.reducers.setAiConfig({ apiKey: input.apiKey, model: input.model });
+        AIProvider.setConfigured(true, input.model, input.apiKey);
+        lastAiConnectionError = null;
+      } catch (cause) {
+        lastAiConnectionError = { model: input.model, message: cause instanceof Error ? cause.message : String(cause) };
+        throw cause;
+      }
+      return { model: input.model };
+    },
+    async disconnectAi() {
+      await connection.reducers.setAiConfig({ apiKey: '', model: '' });
+      AIProvider.setConfigured(false, AIProvider.getModelName(), '');
+      lastAiConnectionError = null;
+    },
+  });
+}
+
+function openIdentityFlow(route: IdentityRoute) {
+  identityCompletionVisible = false;
+  if (route !== 'bring-house-together') editingExistingHomeBasics = false;
+  identityState = hydrateIdentityState(route);
+  const flow = document.querySelector<HTMLElement>('#identity-flow')!;
+  const wasHidden = flow.hidden;
+  if (wasHidden && document.activeElement instanceof HTMLElement) identityReturnFocus = document.activeElement;
+  for (const sibling of [...app.children]) {
+    if (!(sibling instanceof HTMLElement) || sibling === flow) continue;
+    sibling.inert = true;
+    sibling.setAttribute('aria-hidden', 'true');
+  }
+  flow.hidden = false;
+  document.body.classList.add('identity-flow-open');
+  renderIdentityFlowUi();
+  window.requestAnimationFrame(() => flow.querySelector<HTMLElement>('input, button')?.focus());
+}
+
+function closeIdentityFlow() {
+  const flow = document.querySelector<HTMLElement>('#identity-flow')!;
+  flow.hidden = true;
+  for (const sibling of [...app.children]) {
+    if (!(sibling instanceof HTMLElement) || sibling === flow) continue;
+    sibling.inert = false;
+    sibling.removeAttribute('aria-hidden');
+  }
+  document.body.classList.remove('identity-flow-open');
+  identityCompletionVisible = false;
+  editingExistingHomeBasics = false;
+  identityReturnFocus?.focus();
+  identityReturnFocus = null;
+}
+
+function renderIdentityFlowUi() {
+  const mount = document.querySelector<HTMLElement>('#identity-flow-mount');
+  if (!mount) return;
+  mount.innerHTML = renderIdentityFlow(identityState, identityCompletionVisible, editingExistingHomeBasics);
+  const active = activeHomeSelection();
+  if (manualInvitation && manualInvitation.identity === currentIdentity && manualInvitation.homeId === active.flatId && identityState.route === 'bring-house-together') {
+    const actions = mount.querySelector<HTMLElement>('.identity-actions');
+    actions?.insertAdjacentHTML('beforebegin', `<section class="identity-section identity-manual-invitation" role="status"><h2>Invitation ready to copy</h2><p>The browser could not copy automatically. Select the complete link below and copy it manually.</p><div class="identity-fields"><label>Invitation link<input name="manualInvitationLink" value="${escapeHtml(manualInvitation.link)}" readonly /></label></div></section>`);
+    mount.querySelector<HTMLInputElement>('[name="manualInvitationLink"]')?.addEventListener('focus', event => (event.currentTarget as HTMLInputElement).select());
+  }
+  mount.querySelectorAll<HTMLButtonElement>('button[data-identity-route]').forEach(button => {
+    button.addEventListener('click', () => openIdentityFlow(button.dataset.identityRoute as IdentityRoute));
+  });
+  mount.querySelectorAll<HTMLInputElement>('[name="deletionInput"]').forEach(input => {
+    input.addEventListener('input', () => { readIdentityDraft(); renderIdentityFlowUi(); });
+  });
+  mount.querySelectorAll<HTMLButtonElement>('[data-identity-home]').forEach(button => {
+    button.addEventListener('click', async () => {
+      identityState = await switchHome(identityState, BigInt(button.dataset.identityHome || '0'), identityPorts());
+      renderIdentityFlowUi();
+      if (identityState.request === 'success') renderAll();
+    });
+  });
+  mount.querySelectorAll<HTMLButtonElement>('[data-identity-account]').forEach(button => {
+    button.addEventListener('click', async () => {
+      identityState = await switchAccount(identityState, button.dataset.identityAccount || '', identityPorts());
+      renderIdentityFlowUi();
+    });
+  });
+  mount.querySelectorAll<HTMLButtonElement>('[data-identity-action]').forEach(button => {
+    button.addEventListener('click', () => void handleIdentityAction(button.dataset.identityAction || ''));
+  });
+}
+
+async function handleIdentityAction(action: string) {
+  readIdentityDraft();
+  const ports = identityPorts();
+  if (action === 'back') {
+    const route = editingExistingHomeBasics && identityState.route === 'bring-house-together'
+      ? 'settings'
+      : identityBackRoute(identityState.route);
+    editingExistingHomeBasics = false;
+    identityState = { ...identityState, route, request: 'idle', message: undefined };
+  }
+  else if (action === 'create-home') {
+    requestedHomePath = 'create';
+    identityState = { ...identityState, route: identityState.route === 'welcome' ? 'profile' : 'create-home', request: 'idle' };
+  } else if (action === 'join-home') {
+    requestedHomePath = 'join';
+    identityState = { ...identityState, route: identityState.route === 'welcome' ? 'profile' : 'join-home', request: 'idle' };
+  } else if (action === 'save-profile') {
+    identityState = await saveProfile(identityState, ports);
+    if (identityState.request === 'success') identityState = { ...identityState, route: requestedHomePath === 'create' ? 'create-home' : requestedHomePath === 'join' ? 'join-home' : 'home-access' };
+  } else if (action === 'confirm-create-home') identityState = await createHome(identityState, ports);
+  else if (action === 'lookup-invitation') {
+    const value = document.querySelector<HTMLInputElement>('#identity-flow-form [name="invitation"]')?.value || '';
+    identityState = await lookupInvitation(identityState, value, ports);
+  } else if (action === 'confirm-join') {
+    const name = document.querySelector<HTMLInputElement>('#identity-flow-form [name="joinDisplayName"]')?.value || '';
+    identityState = await joinHome(identityState, name, ports);
+    if (identityState.request === 'success') identityState = seedFirstTaskChoices(identityState);
+  } else if (action === 'copy-invitation') {
+    const date = document.querySelector<HTMLInputElement>('#identity-flow-form [name="inviteExpiry"]')?.value;
+    const expiresAt = date ? new Date(`${date}T23:59:59`) : new Date(Date.now() + 7 * 86_400_000);
+    const result = await createInvitation(identityState, { recipient: '', expiresAt }, ports);
+    identityState = result.state;
+    if (result.invitation) {
+      const link = `${location.origin}${location.pathname}?invite=${result.invitation.code}`;
+      try {
+        if (!navigator.clipboard?.writeText) throw new Error('Clipboard access is unavailable.');
+        await navigator.clipboard.writeText(link);
+        manualInvitation = null;
+        identityState = { ...identityState, message: 'Private invitation copied.' };
+      } catch {
+        manualInvitation = { link, identity: currentIdentity, homeId: activeHomeSelection().flatId };
+        identityState = { ...identityState, message: 'Invitation created. Copy the link below.' };
+      }
+    }
+  } else if (action === 'edit-home-basics') {
+    editingExistingHomeBasics = true;
+    identityState = hydrateIdentityState('bring-house-together');
+  } else if (action === 'save-basics') {
+    identityState = await saveHomeBasics(identityState, ports);
+    if (identityState.request === 'success' && editingExistingHomeBasics) {
+      editingExistingHomeBasics = false;
+      identityState = { ...identityState, route: 'settings', message: 'Household basics updated.' };
+    } else if (identityState.request === 'success') {
+      identityState = seedFirstTaskChoices(identityState);
+    }
+  }
+  else if (action === 'add-first-item') {
+    const input = document.querySelector<HTMLInputElement>('#identity-flow-form [name="firstTaskLabel"]');
+    const label = input?.value.trim() || '';
+    if (label) identityState = { ...identityState, firstTaskItems: [...identityState.firstTaskItems, { id: crypto.randomUUID(), label, selected: true }] };
+  } else if (action === 'save-first-items') {
+    identityState = await saveFirstTask(identityState, ports);
+    if (identityState.request === 'success') {
+      identityCompletionVisible = true;
+    }
+  } else if (action === 'sign-out') identityState = await signOut(identityState, ports);
+  else if (action === 'recover-account') {
+    identityState = await beginRecovery(identityState, currentIdentity || undefined, ports);
+    if (identityState.request === 'success') identityState = { ...identityState, message: 'Saved account reconnected on this device.' };
+  }
+  else if (action === 'confirm-delete') identityState = await deleteAccount(identityState, ports);
+  else if (action === 'connect-ai') {
+    const apiKey = document.querySelector<HTMLInputElement>('#identity-flow-form [name="aiKey"]')?.value.trim() || '';
+    const model = document.querySelector<HTMLInputElement>('#identity-flow-form [name="aiModel"]')?.value.trim() || '';
+    identityState = await connectAi(identityState, { apiKey, model }, ports);
+  } else if (action === 'disconnect-ai') identityState = await disconnectIdentityAi(identityState, ports);
+  else if (action === 'open-conversation') { identityCompletionVisible = false; closeIdentityFlow(); navigateTo('conversations'); return; }
+  renderIdentityFlowUi();
+}
+
+document.querySelector('#identity-flow-close')?.addEventListener('click', closeIdentityFlow);
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && !document.querySelector<HTMLElement>('#identity-flow')?.hidden) closeIdentityFlow();
+});
+
 AIProvider.configureBackend(request => connection.procedures.runAi({
   prompt: request.prompt,
   instructions: request.instructions,
@@ -1460,15 +2509,59 @@ AIProvider.configureBackend(request => connection.procedures.runAi({
   jsonMode: request.jsonMode,
 }));
 
+async function sendUserMessage(text: string) {
+  const commandKey = `message:${crypto.randomUUID()}`;
+  const message = addMessage({
+    role: 'user',
+    agent: 'general',
+    text,
+    delivery: isConnected ? 'sending' : 'unsent',
+    commandKey,
+  }, false);
+  if (!activeHomeSelection().flatId) {
+    updateMessage(message.id, { delivery: 'sent' });
+    await routeMessage(text);
+    return;
+  }
+  activeOutbox().enqueue<MessageOutboxPayload>('appendConversationMessage', {
+    conversationId: activeConversationId,
+    messageId: message.id,
+    role: message.role,
+    agent: message.agent,
+    content: encodeStoredMessage(message),
+    text,
+  }, commandKey);
+  if (isConnected && navigator.onLine !== false) await flushActiveOutbox();
+  else updateMessage(message.id, { delivery: 'unsent' });
+}
+
+async function retryMessage(commandKey: string) {
+  const message = conversation.find(candidate => candidate.commandKey === commandKey);
+  if (!message) return;
+  if (!isConnected) {
+    showToast('Tabby is still offline. Your message remains on this device.', 'error');
+    return;
+  }
+  updateMessage(message.id, { delivery: 'sending' });
+  const outbox = activeOutbox();
+  const command = outbox.list().find(candidate => candidate.idempotencyKey === commandKey);
+  if (!command) {
+    updateMessage(message.id, { delivery: 'rejected' });
+    showToast('The queued message could not be found.', 'error');
+    return;
+  }
+  if (command.status === 'failed') outbox.retry(command.id);
+  await flushActiveOutbox();
+}
+
 document.querySelector<HTMLFormElement>('#chat-form')!.addEventListener('submit', event => {
   event.preventDefault();
   const input = document.querySelector<HTMLTextAreaElement>('#chat-input')!;
   const text = input.value.trim();
   if (!text) return;
-  addMessage({ role: 'user', agent: 'general', text });
   input.value = '';
   input.style.height = '';
-  void routeMessage(text);
+  void sendUserMessage(text);
 });
 
 document.querySelector<HTMLTextAreaElement>('#chat-input')!.addEventListener('input', event => {
@@ -1512,13 +2605,7 @@ function closeSettingsBoard() {
 }
 
 function showProfileDialog() {
-  const profile = HouseholdConfigManager.getProfile(currentIdentity || 'local', currentName());
-  (document.querySelector<HTMLInputElement>('#profile-name')!).value = profile.displayName;
-  (document.querySelector<HTMLInputElement>('#profile-habits')!).value = profile.cookingHabits.join(', ');
-  document.querySelectorAll<HTMLInputElement>('input[name="diet"]').forEach(input => {
-    input.checked = profile.dietaryTags.includes(input.value as DietaryTag);
-  });
-  openDialog('profile-dialog');
+  openIdentityFlow('profile');
 }
 document.querySelector('#open-profile')!.addEventListener('click', () => {
   closeSettingsBoard();
@@ -1526,17 +2613,24 @@ document.querySelector('#open-profile')!.addEventListener('click', () => {
 });
 document.querySelector('#mobile-profile')!.addEventListener('click', showProfileDialog);
 
-document.querySelector<HTMLFormElement>('#profile-form')!.addEventListener('submit', event => {
+document.querySelector<HTMLFormElement>('#profile-form')!.addEventListener('submit', async event => {
   event.preventDefault();
   const identity = currentIdentity || 'local';
   const displayName = document.querySelector<HTMLInputElement>('#profile-name')!.value.trim();
   const dietaryTags = [...document.querySelectorAll<HTMLInputElement>('input[name="diet"]:checked')].map(input => input.value as DietaryTag);
   const cookingHabits = document.querySelector<HTMLInputElement>('#profile-habits')!.value.split(',').map(value => value.trim()).filter(Boolean);
-  HouseholdConfigManager.saveProfile({ identityHex: identity, displayName, dietaryTags, cookingHabits, customSplitExclusions: [] });
-  if (currentIdentityHasMembership()) {
-    connection.reducers.setDisplayName({ displayName });
-    publishSharedFacts(dietaryTags.map(diet => TabbyBrain.createSharedFact('diet', 'diet', diet.replace(/_/g, ' '))));
-    cookingHabits.forEach(habit => publishSharedFacts([TabbyBrain.createSharedFact('routine', 'cooking habit', habit)]));
+  scopedHouseholdConfig()?.saveProfile({ identityHex: identity, displayName, dietaryTags, cookingHabits, customSplitExclusions: [] });
+  try {
+    if (currentIdentityHasMembership()) {
+      await connection.reducers.setDisplayName({ displayName });
+      await publishSharedFacts([
+        ...dietaryTags.map(diet => TabbyBrain.createSharedFact('diet', 'diet', diet.replace(/_/g, ' '))),
+        ...cookingHabits.map(habit => TabbyBrain.createSharedFact('routine', 'cooking habit', habit)),
+      ]);
+    }
+  } catch (cause) {
+    showToast(cause instanceof Error ? cause.message : 'The shared profile update failed.', 'error');
+    return;
   }
   document.querySelector<HTMLDialogElement>('#profile-dialog')!.close();
   renderContextPanel();
@@ -1551,23 +2645,24 @@ async function undoAiChange() {
   }
 
   const { apiKey, model } = snapshot;
-  AIProvider.setConfigured(true, model, apiKey);
+  const connected = await AIProvider.testConnection(apiKey, model);
+  if (!connected) {
+    showToast('The previous AI connection is unavailable, so it was not restored.', 'error');
+    return;
+  }
 
   if (isConnected) {
     try {
-      connection.reducers.setAiConfig({ apiKey, model });
+      await connection.reducers.setAiConfig({ apiKey, model });
     } catch (e) {
-      console.warn('Failed restoring key to SpacetimeDB:', e);
+      showToast(e instanceof Error ? e.message : 'The AI connection could not be restored.', 'error');
+      return;
     }
   }
 
+  AIProvider.setConfigured(true, model, apiKey);
   syncAiStatus();
   showToast(`Restored OpenAI connection (${model}).`);
-
-  const ok = await AIProvider.testConnection(apiKey, model);
-  if (ok) {
-    showToast('OpenAI connection verified.');
-  }
 }
 
 async function disconnectAi() {
@@ -1579,13 +2674,14 @@ async function disconnectAi() {
 
   if (isConnected) {
     try {
-      connection.reducers.setAiConfig({ apiKey: '', model: '' });
+      await connection.reducers.setAiConfig({ apiKey: '', model: '' });
     } catch (e) {
       console.warn('Failed clearing SpacetimeDB AI config:', e);
     }
   }
 
   AIProvider.setConfigured(false, currentModel, '');
+  lastAiConnectionError = null;
   syncAiStatus();
   document.querySelector<HTMLDialogElement>('#ai-dialog')?.close();
 
@@ -1596,28 +2692,7 @@ async function disconnectAi() {
 }
 
 function showAiDialog() {
-  const keyInput = document.querySelector<HTMLInputElement>('#ai-key')!;
-  const modelInput = document.querySelector<HTMLInputElement>('#ai-model')!;
-  const statusBadge = document.querySelector<HTMLElement>('#ai-status-indicator');
-  const disconnectBtn = document.querySelector<HTMLButtonElement>('#disconnect-ai');
-
-  const hasKey = AIProvider.hasApiKey();
-  keyInput.value = '';
-  keyInput.placeholder = hasKey ? '•••••••• (Enter a new key to replace)' : 'Enter a key to connect OpenAI (sk-...)';
-  modelInput.value = AIProvider.getModelName() || (import.meta.env.VITE_OPENAI_MODEL as string | undefined)?.trim() || 'gpt-5.6-sol';
-
-  if (statusBadge) {
-    statusBadge.textContent = hasKey
-      ? `Connected (${AIProvider.getModelName()})`
-      : 'Not connected';
-    statusBadge.className = `ai-status-badge ${hasKey ? 'connected' : 'disconnected'}`;
-  }
-
-  if (disconnectBtn) {
-    disconnectBtn.hidden = !hasKey;
-  }
-
-  openDialog('ai-dialog');
+  openIdentityFlow('settings');
 }
 document.querySelector('#open-ai-settings')!.addEventListener('click', showAiDialog);
 document.querySelector('#mobile-ai-settings')!.addEventListener('click', showAiDialog);
@@ -1642,39 +2717,38 @@ document.querySelector<HTMLFormElement>('#ai-form')!.addEventListener('submit', 
     return showToast('Enter a valid OpenAI API key (must start with sk-).', 'error');
   }
 
-  if (prevKey && (prevKey !== apiKey || prevModel !== model)) {
-    AIProvider.saveUndoSnapshot(prevKey, prevModel);
+  const submit = document.querySelector<HTMLButtonElement>('#ai-form button[type="submit"]');
+  if (submit) submit.disabled = true;
+  const status = document.querySelector<HTMLElement>('#ai-status-indicator');
+  if (status) {
+    status.className = 'ai-status-badge checking';
+    status.textContent = 'Checking connection';
   }
-
-  AIProvider.setConfigured(true, model, apiKey);
-  keyInput.value = '';
-  document.querySelector<HTMLDialogElement>('#ai-dialog')?.close();
-
-  if (isConnected) {
-    try {
-      connection.reducers.setAiConfig({ apiKey, model });
-    } catch (e) {
-      console.warn('SpacetimeDB setAiConfig notice:', e);
-    }
-  }
-
   document.querySelector('#open-ai-settings')!.textContent = 'Settings';
   document.querySelector('#mobile-ai-settings')!.textContent = 'Settings · Checking AI';
-  showToast('AI connection saved. Testing now.');
-
-  const verified = await AIProvider.testConnection(apiKey, model);
-  syncAiStatus();
-
-  if (verified) {
-    showToast('OpenAI connected and verified successfully!', 'success', prevKey && prevKey !== apiKey ? {
-      label: 'Undo',
-      onClick: undoAiChange,
+  try {
+    const connected = await AIProvider.testConnection(apiKey, model);
+    if (!connected) throw new Error('The AI connection failed. Nothing was saved.');
+    if (isConnected) await connection.reducers.setAiConfig({ apiKey, model });
+    if (prevKey && (prevKey !== apiKey || prevModel !== model)) AIProvider.saveUndoSnapshot(prevKey, prevModel);
+    AIProvider.setConfigured(true, model, apiKey);
+    lastAiConnectionError = null;
+    keyInput.value = '';
+    document.querySelector<HTMLDialogElement>('#ai-dialog')?.close();
+    syncAiStatus();
+    showToast('OpenAI connected successfully.', 'success', prevKey && prevKey !== apiKey ? {
+      label: 'Undo', onClick: undoAiChange,
     } : undefined);
-  } else {
-    showToast('OpenAI key saved, but verification failed. Check model or quota.', 'error', prevKey && prevKey !== apiKey ? {
-      label: 'Undo',
-      onClick: undoAiChange,
-    } : undefined);
+  } catch (cause) {
+    lastAiConnectionError = { model, message: cause instanceof Error ? cause.message : 'The AI connection failed. Nothing was saved.' };
+    if (status) {
+      status.className = 'ai-status-badge error';
+      status.textContent = 'Connection failed · key not saved';
+    }
+    document.querySelector('#mobile-ai-settings')!.textContent = 'Settings · AI disconnected';
+    showToast(cause instanceof Error ? cause.message : 'The AI connection failed. Nothing was saved.', 'error');
+  } finally {
+    if (submit) submit.disabled = false;
   }
 });
 
@@ -1710,83 +2784,77 @@ document.querySelectorAll<HTMLButtonElement>('[data-close-dialog]').forEach(butt
 
 const contextPanel = document.querySelector<HTMLElement>('#context-panel')!;
 const contextToggle = document.querySelector<HTMLButtonElement>('#context-toggle')!;
-let contextCloseTimer = 0;
 const contextIsDrawer = () => window.matchMedia('(max-width: 1120px)').matches;
+const drawerController = installDrawerController({
+  panel: contextPanel,
+  toggle: contextToggle,
+  close: document.querySelector<HTMLButtonElement>('#context-close')!,
+  scrim: document.querySelector<HTMLElement>('#drawer-scrim')!,
+  isDrawer: contextIsDrawer,
+});
 
 function setContextOpen(open: boolean) {
-  window.clearTimeout(contextCloseTimer);
-  if (!contextIsDrawer()) {
-    contextPanel.hidden = false;
-    contextPanel.inert = false;
-    contextPanel.classList.remove('open');
-    contextToggle.setAttribute('aria-expanded', 'false');
-    return;
-  }
-
-  if (open) {
-    contextPanel.hidden = false;
-    contextPanel.inert = false;
-    requestAnimationFrame(() => {
-      contextPanel.classList.add('open');
-      document.querySelector<HTMLButtonElement>('#context-close')?.focus();
-    });
-  } else {
-    contextPanel.classList.remove('open');
-    contextPanel.inert = true;
-    contextCloseTimer = window.setTimeout(() => {
-      if (!contextPanel.classList.contains('open')) contextPanel.hidden = true;
-    }, 210);
-    if (document.activeElement && contextPanel.contains(document.activeElement)) contextToggle.focus();
-  }
-  contextToggle.setAttribute('aria-expanded', String(open));
+  drawerController.setOpen(open);
 }
-contextToggle.addEventListener('click', () => setContextOpen(!contextPanel.classList.contains('open')));
-document.querySelector('#context-close')!.addEventListener('click', () => setContextOpen(false));
-window.addEventListener('resize', () => setContextOpen(false));
 
-document.querySelector<HTMLFormElement>('#quick-rule-form')?.addEventListener('submit', event => {
+document.querySelector<HTMLFormElement>('#quick-rule-form')?.addEventListener('submit', async event => {
   event.preventDefault();
   const typeSelect = document.querySelector<HTMLSelectElement>('#quick-rule-type')!;
   const titleInput = document.querySelector<HTMLInputElement>('#quick-rule-title')!;
   const ruleType = (typeSelect.value === 'implicit' ? 'implicit' : 'explicit') as 'implicit' | 'explicit';
   const title = titleInput.value.trim();
   if (!title) return;
-  addOrUpdateFlatRule(ruleType, title);
-  titleInput.value = '';
-  showToast(`Added an ${ruleType === 'explicit' ? 'agreed' : 'usual'} house rule.`);
+  const result = await addOrUpdateFlatRule(ruleType, title);
+  if (result.status === 'acknowledged') {
+    titleInput.value = '';
+    showToast(`Added an ${ruleType === 'explicit' ? 'agreed' : 'usual'} house rule.`);
+  } else if (result.status === 'rejected') {
+    showToast(result.error.message, 'error');
+  }
 });
 
-document.querySelector('#reset-tabby-db')?.addEventListener('click', clearAllTabbyData);
+document.querySelector('#reset-tabby-db')?.addEventListener('click', () => {
+  closeSettingsBoard();
+  openIdentityFlow('delete-account');
+});
 
-document.querySelector<HTMLFormElement>('#quick-pantry-form')?.addEventListener('submit', event => {
+document.querySelector<HTMLFormElement>('#quick-pantry-form')?.addEventListener('submit', async event => {
   event.preventDefault();
   const nameInput = document.querySelector<HTMLInputElement>('#quick-pantry-name')!;
   const qtyInput = document.querySelector<HTMLInputElement>('#quick-pantry-qty')!;
   const name = nameInput.value.trim();
   const quantity = Math.max(1, parseInt(qtyInput.value, 10) || 1);
   if (!name) return;
-  addOrUpdatePantryItem(name, quantity, 'items');
-  nameInput.value = '';
-  qtyInput.value = '1';
-  showToast(`Added ${quantity} ${name} to the pantry.`);
+  const result = await addOrUpdatePantryItem(name, quantity, 'items');
+  if (result.status === 'acknowledged') {
+    nameInput.value = '';
+    qtyInput.value = '1';
+    showToast(`Added ${quantity} ${name} to the pantry.`);
+  } else if (result.status === 'rejected') {
+    showToast(result.error.message, 'error');
+  }
+});
+
+document.querySelector<HTMLFormElement>('#quick-reminder-form')?.addEventListener('submit', async event => {
+  event.preventDefault();
+  const titleInput = document.querySelector<HTMLInputElement>('#quick-reminder-title')!;
+  const dueInput = document.querySelector<HTMLInputElement>('#quick-reminder-due')!;
+  const title = titleInput.value.trim();
+  const due = new Date(dueInput.value);
+  if (!title || Number.isNaN(due.getTime())) return showToast('Add a reminder and choose when it is due.', 'error');
+  const result = await commandCoordinator.execute(`reminder:create:${crypto.randomUUID()}`, () =>
+    householdGateway.executeHouseholdAction(createReminderAction(title, BigInt(due.getTime()) * 1_000n)));
+  if (result.status === 'acknowledged') {
+    titleInput.value = '';
+    dueInput.value = '';
+    showToast('Reminder saved to the Home shelf.');
+  } else showToast(result.status === 'rejected' ? result.error.message : 'Reconnect to add this reminder.', 'error');
 });
 
 // Login Modal Logic
 function showLoginDialog() {
   const user = AuthManager.getCurrentUser();
-  const nameInput = document.querySelector<HTMLInputElement>('#login-name')!;
-  const phoneInput = document.querySelector<HTMLInputElement>('#login-phone')!;
-  if (nameInput) nameInput.value = user.isLoggedIn ? user.name : '';
-  if (phoneInput) phoneInput.value = user.isLoggedIn ? user.phone : '';
-  openDialog('login-dialog');
-}
-
-function fillSamDemo() {
-  const nameInput = document.querySelector<HTMLInputElement>('#login-name')!;
-  const phoneInput = document.querySelector<HTMLInputElement>('#login-phone')!;
-  if (nameInput) nameInput.value = 'Sam';
-  if (phoneInput) phoneInput.value = '+91 98765 43210';
-  showToast('Sam demo details are ready.');
+  openIdentityFlow(user.isLoggedIn ? 'accounts' : 'welcome');
 }
 
 document.querySelector('#open-login-dialog')?.addEventListener('click', () => {
@@ -1798,7 +2866,6 @@ document.querySelector('#mobile-login')?.addEventListener('click', () => {
   setContextOpen(false);
   showLoginDialog();
 });
-document.querySelector('#fill-sam-demo')?.addEventListener('click', fillSamDemo);
 document.querySelector('.create-home-action')?.addEventListener('click', () => {
   document.querySelector<HTMLDialogElement>('#login-dialog')?.close();
   showOnboardingDialog('create');
@@ -1853,11 +2920,13 @@ function updateOnboardFlatsDropdown() {
   }
 
   if (newResGroup) newResGroup.hidden = true;
-  const flats = ResidenceManager.getFlats(selectedResId);
-  const activeFlat = ResidenceManager.getActiveFlat();
+  const flats = householdGateway.homes()
+    .filter(home => String(home.residenceId) === selectedResId)
+    .map(home => ({ id: String(home.id), name: home.name, flatNumber: home.flatNumber }));
+  const activeFlat = activeHomeSelection();
 
   flatSelect.innerHTML = flats.map(f => `
-    <option value="${escapeHtml(f.id)}" ${f.id === activeFlat.flatId ? 'selected' : ''}>${escapeHtml(f.flatNumber)} — ${escapeHtml(f.name)}</option>
+    <option value="${escapeHtml(f.id)}" ${f.id === activeFlat.flatId ? 'selected' : ''}>${escapeHtml(f.flatNumber)}: ${escapeHtml(f.name)}</option>
   `).join('') + `<option value="__new__">Create a new flat or address</option>`;
 
   if (newFlatGroup) {
@@ -1866,8 +2935,8 @@ function updateOnboardFlatsDropdown() {
 }
 
 function populateOnboardingDropdowns() {
-  const residences = ResidenceManager.getResidences();
-  const activeFlat = ResidenceManager.getActiveFlat();
+  const residences = householdGateway.residences().map(row => ({ id: String(row.id), name: row.name, address: row.address }));
+  const activeFlat = activeHomeSelection();
   const resSelect = document.querySelector<HTMLSelectElement>('#onboard-residence')!;
   const memberNameInput = document.querySelector<HTMLInputElement>('#onboard-display-name')!;
 
@@ -1886,15 +2955,8 @@ function populateOnboardingDropdowns() {
 }
 
 function showOnboardingDialog(mode: 'create' | 'join' = 'join') {
-  populateOnboardingDropdowns();
-  if (mode === 'create') {
-    const residence = document.querySelector<HTMLSelectElement>('#onboard-residence');
-    if (residence) {
-      residence.value = '__new__';
-      updateOnboardFlatsDropdown();
-    }
-  }
-  openDialog('onboard-dialog');
+  requestedHomePath = mode;
+  openIdentityFlow(mode === 'create' ? 'create-home' : 'home-access');
 }
 
 document.querySelector('#open-onboard-dialog')?.addEventListener('click', () => {
@@ -1915,7 +2977,7 @@ document.querySelector('#onboard-flat')?.addEventListener('change', () => {
   }
 });
 
-document.querySelector<HTMLFormElement>('#onboard-form')?.addEventListener('submit', event => {
+document.querySelector<HTMLFormElement>('#onboard-form')?.addEventListener('submit', async event => {
   event.preventDefault();
   const resSelect = document.querySelector<HTMLSelectElement>('#onboard-residence')!;
   const flatSelect = document.querySelector<HTMLSelectElement>('#onboard-flat')!;
@@ -1931,22 +2993,29 @@ document.querySelector<HTMLFormElement>('#onboard-form')?.addEventListener('subm
   let newResidence: { name: string; address: string } | undefined;
 
   if (resId === '__new__') {
-    const resName = (document.querySelector<HTMLInputElement>('#new-res-name')?.value || '').trim() || 'New Residency';
-    const resAddress = (document.querySelector<HTMLInputElement>('#new-res-address')?.value || '').trim() || 'Bengaluru';
-    const newRes = ResidenceManager.addResidence(resName, resAddress);
-    resId = newRes.id;
+    const resNameInput = document.querySelector<HTMLInputElement>('#new-res-name')!;
+    const resAddressInput = document.querySelector<HTMLInputElement>('#new-res-address')!;
+    const resName = resNameInput.value.trim();
+    const resAddress = resAddressInput.value.trim();
+    if (!resName || !resAddress) {
+      (resName ? resAddressInput : resNameInput).focus();
+      return showToast('Enter a home name and area or building.', 'error');
+    }
     newResidence = { name: resName, address: resAddress };
   }
 
   if (flatId === '__new__') {
-    const flatNum = (document.querySelector<HTMLInputElement>('#new-flat-num')?.value || '').trim() || 'Flat 101';
-    const flatName = (document.querySelector<HTMLInputElement>('#new-flat-name')?.value || '').trim() || 'Family Flat';
-    const newFlat = ResidenceManager.addFlat(resId, flatName, flatNum);
-    flatId = newFlat.id;
-    if (isConnected) {
-      try {
+    const flatNumInput = document.querySelector<HTMLInputElement>('#new-flat-num')!;
+    const flatNameInput = document.querySelector<HTMLInputElement>('#new-flat-name')!;
+    const flatNum = flatNumInput.value.trim();
+    const flatName = flatNameInput.value.trim();
+    if (!flatNum || !flatName) {
+      (flatNum ? flatNameInput : flatNumInput).focus();
+      return showToast('Enter the flat or address label and a home nickname.', 'error');
+    }
+    const result = await commandCoordinator.execute(`home:create:${Date.now()}`, async () => {
         if (newResidence) {
-          connection.reducers.createHomeAndJoin({
+          await connection.reducers.createHomeAndJoin({
             residenceName: newResidence.name,
             address: newResidence.address,
             flatName,
@@ -1954,23 +3023,28 @@ document.querySelector<HTMLFormElement>('#onboard-form')?.addEventListener('subm
             displayName,
           });
         } else {
-          connection.reducers.createAndJoinFlat({
-            residenceId: BigInt(resId.match(/^\d+$/) ? resId : '1'),
+          if (!resId.match(/^\d+$/)) throw new Error('Choose a synchronized residence.');
+          await connection.reducers.createAndJoinFlat({
+            residenceId: BigInt(resId),
             flatName,
             flatNumber: flatNum,
             displayName,
           });
         }
-      } catch (e) {}
+    });
+    if (result.status !== 'acknowledged') {
+      return showToast(result.status === 'rejected' ? result.error.message : 'Waiting for a connection.', 'error');
     }
   } else {
-    if (isConnected) {
-      try {
-        connection.reducers.joinFlat({
-          flatId: BigInt(flatId.match(/^\d+$/) ? flatId : '1'),
+    const result = await commandCoordinator.execute(`home:join:${flatId}`, async () => {
+        if (!flatId.match(/^\d+$/)) throw new Error('Choose a synchronized home.');
+        await connection.reducers.joinFlat({
+          flatId: BigInt(flatId),
           displayName,
         });
-      } catch (e) {}
+    });
+    if (result.status !== 'acknowledged') {
+      return showToast(result.status === 'rejected' ? result.error.message : 'Waiting for a connection.', 'error');
     }
   }
 
@@ -1980,16 +3054,32 @@ document.querySelector<HTMLFormElement>('#onboard-form')?.addEventListener('subm
     ...currentUser,
     name: displayName,
     isLoggedIn: true,
-    residenceId: resId,
-    flatId,
+    residenceId: resId === '__new__' ? currentUser.residenceId : resId,
+    flatId: flatId === '__new__' ? currentUser.flatId : flatId,
   });
 
-  const activeSelection = ResidenceManager.onboardMember(resId, flatId, displayName);
   document.querySelector<HTMLDialogElement>('#onboard-dialog')?.close();
   renderAll();
-  showToast(`${activeSelection.flatName} is ready. Start with your first real task.`, 'success');
+  showToast('Home setup was acknowledged. Start with your first real task.', 'success');
   document.querySelector<HTMLTextAreaElement>('#chat-input')?.focus();
 });
+
+function navigateTo(route: AppRoute) {
+  appStore.update({ route });
+  reflectRoute(route);
+  if (route === 'home' && contextIsDrawer()) setContextOpen(true);
+  if (route !== 'home' && drawerController.isOpen()) setContextOpen(false);
+  if (route === 'pantry') renderPantryRoute();
+}
+
+installRouteNavigation(navigateTo);
+document.querySelector('#open-home-shelf')?.addEventListener('click', () => setContextOpen(true));
+document.querySelector<HTMLInputElement>('#pantry-search')?.addEventListener('input', event => {
+  pantryFilters = { ...pantryFilters, query: (event.currentTarget as HTMLInputElement).value };
+  renderPantryRoute();
+});
+document.querySelector('#retry-connection')?.addEventListener('click', reconnectDatabaseImmediately);
+reflectRoute(appStore.getState().route);
 
 renderConversation();
 setContextOpen(false);

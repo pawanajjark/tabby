@@ -19,6 +19,7 @@ export interface SharedContextRecord extends MemoryFact {
 
 export interface BrainAnalysis {
   intent: AgentIntent;
+  intents: AgentIntent[];
   confidence: number;
   privateFacts: MemoryFact[];
   shareableFacts: MemoryFact[];
@@ -79,7 +80,15 @@ export class TabbyBrain {
   }
 
   static detectIntent(message: string): AgentIntent {
-    return INTENT_RULES.find(([, pattern]) => pattern.test(message))?.[0] ?? 'general';
+    return this.detectIntents(message)[0];
+  }
+
+  /** Returns every matching domain in the stable priority declared by INTENT_RULES. */
+  static detectIntents(message: string): AgentIntent[] {
+    const matches = INTENT_RULES
+      .filter(([, pattern]) => pattern.test(message))
+      .map(([intent]) => intent);
+    return matches.length > 0 ? matches : ['general'];
   }
 
   static async analyze(
@@ -87,7 +96,8 @@ export class TabbyBrain {
     recentHistory: Array<{ role: string; text?: string }> = [],
     existingContext: SharedContextRecord[] = []
   ): Promise<BrainAnalysis> {
-    const heuristicIntent = this.detectIntent(message);
+    const heuristicIntents = this.detectIntents(message);
+    const heuristicIntent = heuristicIntents[0];
     const heuristicFacts = this.extractFacts(message, recentHistory, existingContext);
     let intent = heuristicIntent;
     let facts = heuristicFacts;
@@ -165,8 +175,13 @@ Return valid JSON with "intent" and "facts".`
       }
     }
 
+    const intents = heuristicIntents.includes(intent)
+      ? heuristicIntents
+      : [intent, ...heuristicIntents.filter(candidate => candidate !== 'general')];
+
     return {
       intent,
+      intents,
       confidence: intent === heuristicIntent ? 0.92 : 0.78,
       privateFacts: facts,
       shareableFacts: facts.filter(fact => fact.visibility === 'shared'),

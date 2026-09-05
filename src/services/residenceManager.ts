@@ -1,5 +1,3 @@
-// src/services/residenceManager.ts
-
 export interface ResidenceItem {
   id: string;
   name: string;
@@ -22,200 +20,182 @@ export interface ActiveFlatSelection {
   flatNumber: string;
 }
 
-const RESIDENCES_STORAGE_KEY = 'tabby_residences_list';
-const FLATS_STORAGE_KEY = 'tabby_flats_list';
-const ACTIVE_FLAT_STORAGE_KEY = 'tabby_active_flat';
+export interface ResidenceScope {
+  identity: string;
+  homeId?: string;
+}
 
-export const DEFAULT_RESIDENCES: ResidenceItem[] = [
-  {
-    id: '1',
-    name: 'Palm Grove Residency',
-    address: '12th Main Road, Indiranagar, Bengaluru',
-  },
-  {
-    id: '2',
-    name: 'Greenwood Heights',
-    address: 'Outer Ring Road, Bellandur, Bengaluru',
-  },
-  {
-    id: '3',
-    name: 'Silver Oak Enclave',
-    address: 'Koramangala 4th Block, Bengaluru',
-  },
-];
+interface StorageLike {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
 
-export const DEFAULT_FLATS: FlatItem[] = [
-  {
-    id: '1',
-    residenceId: '1',
-    name: 'Sunshine Haven',
-    flatNumber: 'Flat 402',
-    defaultRoommates: ['Sam', 'Alex', 'Maya'],
-  },
-  {
-    id: '2',
-    residenceId: '1',
-    name: 'Garden Suite',
-    flatNumber: 'Flat 104',
-    defaultRoommates: ['Rohan', 'Priya'],
-  },
-  {
-    id: '3',
-    residenceId: '2',
-    name: 'Skyline Loft',
-    flatNumber: 'Flat 801',
-    defaultRoommates: ['Arjun', 'Neha'],
-  },
-  {
-    id: '4',
-    residenceId: '3',
-    name: 'Cedar Court',
-    flatNumber: 'Flat 205',
-    defaultRoommates: ['David', 'Sarah'],
-  },
-];
+const EMPTY_SELECTION: ActiveFlatSelection = {
+  residenceId: '',
+  residenceName: '',
+  flatId: '',
+  flatName: '',
+  flatNumber: '',
+};
 
-export class ResidenceManager {
-  static getResidences(): ResidenceItem[] {
-    try {
-      const data = localStorage.getItem(RESIDENCES_STORAGE_KEY);
-      if (data) {
-        const parsed = JSON.parse(data);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    this.saveResidences(DEFAULT_RESIDENCES);
-    return DEFAULT_RESIDENCES;
+/** Kept as compatibility exports; production starts with honest empty collections. */
+export const DEFAULT_RESIDENCES: ResidenceItem[] = [];
+export const DEFAULT_FLATS: FlatItem[] = [];
+
+function scopeKey(scope?: ResidenceScope): string {
+  if (!scope?.identity.trim()) return 'unscoped';
+  return `${encodeURIComponent(scope.identity.trim().toLowerCase())}:${encodeURIComponent(scope.homeId?.trim() || 'all')}`;
+}
+
+function key(kind: string, scope?: ResidenceScope): string {
+  return `tabby_residence_v2:${scopeKey(scope)}:${kind}`;
+}
+
+function readArray<T>(storage: StorageLike, storageKey: string): T[] {
+  try {
+    const value = JSON.parse(storage.getItem(storageKey) ?? '[]');
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+function makeId(prefix: string): string {
+  if (globalThis.crypto?.randomUUID) return `${prefix}_${globalThis.crypto.randomUUID()}`;
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+}
+
+function requireText(value: string, label: string): string {
+  const clean = value.trim();
+  if (!clean) throw new Error(`${label} is required.`);
+  return clean;
+}
+
+export class ScopedResidenceRepository {
+  private readonly scope: ResidenceScope;
+  private readonly storage: StorageLike;
+
+  constructor(
+    scope: ResidenceScope,
+    storage: StorageLike = globalThis.localStorage,
+  ) {
+    if (!scope.identity.trim()) throw new Error('An identity is required to scope residence data.');
+    this.scope = scope;
+    this.storage = storage;
   }
 
-  static saveResidences(list: ResidenceItem[]) {
-    try {
-      localStorage.setItem(RESIDENCES_STORAGE_KEY, JSON.stringify(list));
-    } catch {}
+  getResidences(): ResidenceItem[] {
+    return readArray<ResidenceItem>(this.storage, key('residences', this.scope));
   }
 
-  static getFlats(residenceId?: string): FlatItem[] {
-    let flats: FlatItem[] = [];
+  saveResidences(list: ResidenceItem[]): void {
+    this.storage.setItem(key('residences', this.scope), JSON.stringify(list));
+  }
+
+  getFlats(residenceId?: string): FlatItem[] {
+    const flats = readArray<FlatItem>(this.storage, key('flats', this.scope));
+    return residenceId ? flats.filter(flat => flat.residenceId === residenceId) : flats;
+  }
+
+  saveFlats(list: FlatItem[]): void {
+    this.storage.setItem(key('flats', this.scope), JSON.stringify(list));
+  }
+
+  getActiveFlat(): ActiveFlatSelection | null {
     try {
-      const data = localStorage.getItem(FLATS_STORAGE_KEY);
-      if (data) {
-        const parsed = JSON.parse(data);
-        if (Array.isArray(parsed) && parsed.length > 0) flats = parsed;
-      }
-    } catch {}
-    if (flats.length === 0) {
-      flats = DEFAULT_FLATS;
-      this.saveFlats(flats);
+      const parsed = JSON.parse(this.storage.getItem(key('active', this.scope)) ?? 'null') as ActiveFlatSelection | null;
+      return parsed?.flatId && parsed.residenceId ? parsed : null;
+    } catch {
+      return null;
     }
-    if (residenceId) {
-      return flats.filter(f => f.residenceId === residenceId);
+  }
+
+  setActiveFlat(selection: ActiveFlatSelection): void {
+    const residence = this.getResidences().find(item => item.id === selection.residenceId);
+    const flat = this.getFlats(selection.residenceId).find(item => item.id === selection.flatId);
+    if (!residence || !flat) throw new Error('The selected home is not available in this account scope.');
+    this.storage.setItem(key('active', this.scope), JSON.stringify(selection));
+  }
+
+  addResidence(name: string, address: string): ResidenceItem {
+    const residence = { id: makeId('residence'), name: requireText(name, 'Residence name'), address: requireText(address, 'Address') };
+    this.saveResidences([...this.getResidences(), residence]);
+    return residence;
+  }
+
+  addFlat(residenceId: string, name: string, flatNumber: string): FlatItem {
+    if (!this.getResidences().some(residence => residence.id === residenceId)) {
+      throw new Error('The residence does not exist in this account scope.');
     }
-    return flats;
-  }
-
-  static saveFlats(list: FlatItem[]) {
-    try {
-      localStorage.setItem(FLATS_STORAGE_KEY, JSON.stringify(list));
-    } catch {}
-  }
-
-  static getActiveFlat(): ActiveFlatSelection {
-    try {
-      const data = localStorage.getItem(ACTIVE_FLAT_STORAGE_KEY);
-      if (data) {
-        const parsed = JSON.parse(data);
-        if (parsed && parsed.flatId) return parsed;
-      }
-    } catch {}
-    const defaultRes = this.getResidences()[0];
-    const defaultFlat = this.getFlats(defaultRes.id)[0] || DEFAULT_FLATS[0];
-    const initial: ActiveFlatSelection = {
-      residenceId: defaultRes.id,
-      residenceName: defaultRes.name,
-      flatId: defaultFlat.id,
-      flatName: defaultFlat.name,
-      flatNumber: defaultFlat.flatNumber,
-    };
-    this.setActiveFlat(initial);
-    return initial;
-  }
-
-  static setActiveFlat(selection: ActiveFlatSelection) {
-    try {
-      localStorage.setItem(ACTIVE_FLAT_STORAGE_KEY, JSON.stringify(selection));
-    } catch {}
-  }
-
-  static addResidence(name: string, address: string): ResidenceItem {
-    const residences = this.getResidences();
-    const newRes: ResidenceItem = {
-      id: String(Date.now()),
-      name: name.trim() || 'New Residence',
-      address: address.trim() || 'Bengaluru',
-    };
-    residences.push(newRes);
-    this.saveResidences(residences);
-    return newRes;
-  }
-
-  static addFlat(residenceId: string, name: string, flatNumber: string): FlatItem {
-    const flats = this.getFlats();
-    const newFlat: FlatItem = {
-      id: String(Date.now()),
+    const flat: FlatItem = {
+      id: makeId('flat'),
       residenceId,
-      name: name.trim() || 'My Flat',
-      flatNumber: flatNumber.trim() || 'Flat 101',
-      defaultRoommates: ['Sam'],
+      name: requireText(name, 'Home name'),
+      flatNumber: requireText(flatNumber, 'Flat number'),
+      defaultRoommates: [],
     };
-    flats.push(newFlat);
-    this.saveFlats(flats);
-    return newFlat;
+    this.saveFlats([...this.getFlats(), flat]);
+    return flat;
   }
 
-  static onboardMember(residenceId: string, flatId: string, memberName: string): ActiveFlatSelection {
-    const residences = this.getResidences();
-    const flats = this.getFlats();
-    const res = residences.find(r => r.id === residenceId) || residences[0];
-    const flat = flats.find(f => f.id === flatId) || flats[0];
-
+  onboardMember(residenceId: string, flatId: string): ActiveFlatSelection {
+    const residence = this.getResidences().find(item => item.id === residenceId);
+    const flat = this.getFlats(residenceId).find(item => item.id === flatId);
+    if (!residence || !flat) throw new Error('The selected home is not available in this account scope.');
     const selection: ActiveFlatSelection = {
-      residenceId: res.id,
-      residenceName: res.name,
+      residenceId: residence.id,
+      residenceName: residence.name,
       flatId: flat.id,
       flatName: flat.name,
       flatNumber: flat.flatNumber,
     };
-
-    // Update flat roommates list if memberName not already in
-    if (flat.defaultRoommates && !flat.defaultRoommates.includes(memberName)) {
-      flat.defaultRoommates.push(memberName);
-      this.saveFlats(flats);
-    }
-
     this.setActiveFlat(selection);
     return selection;
   }
 
-  static syncFromDb(
+  syncFromDb(
     dbResidences: Array<{ id: bigint | string; name: string; address: string }>,
-    dbFlats: Array<{ id: bigint | string; residenceId: bigint | string; name: string; flatNumber: string }>
-  ) {
-    if (dbResidences.length > 0) {
-      const mappedRes: ResidenceItem[] = dbResidences.map(r => ({
-        id: r.id.toString(),
-        name: r.name,
-        address: r.address,
-      }));
-      this.saveResidences(mappedRes);
-    }
-    if (dbFlats.length > 0) {
-      const mappedFlats: FlatItem[] = dbFlats.map(f => ({
-        id: f.id.toString(),
-        residenceId: f.residenceId.toString(),
-        name: f.name,
-        flatNumber: f.flatNumber,
-      }));
-      this.saveFlats(mappedFlats);
+    dbFlats: Array<{ id: bigint | string; residenceId: bigint | string; name: string; flatNumber: string }>,
+  ): void {
+    this.saveResidences(dbResidences.map(row => ({ id: String(row.id), name: row.name, address: row.address })));
+    this.saveFlats(dbFlats.map(row => ({
+      id: String(row.id),
+      residenceId: String(row.residenceId),
+      name: row.name,
+      flatNumber: row.flatNumber,
+      defaultRoommates: [],
+    })));
+    const active = this.getActiveFlat();
+    if (active && !dbFlats.some(row => String(row.id) === active.flatId)) {
+      this.storage.removeItem(key('active', this.scope));
     }
   }
+}
+
+/** Compatibility facade for current UI; new domain code should call forScope. */
+export class ResidenceManager {
+  private static unscoped() {
+    return new ScopedResidenceRepository({ identity: 'unscoped' });
+  }
+
+  static forScope(scope: ResidenceScope, storage?: StorageLike): ScopedResidenceRepository {
+    return new ScopedResidenceRepository(scope, storage);
+  }
+
+  static getResidences(): ResidenceItem[] { return this.unscoped().getResidences(); }
+  static saveResidences(list: ResidenceItem[]): void { this.unscoped().saveResidences(list); }
+  static getFlats(residenceId?: string): FlatItem[] { return this.unscoped().getFlats(residenceId); }
+  static saveFlats(list: FlatItem[]): void { this.unscoped().saveFlats(list); }
+  static getActiveFlat(): ActiveFlatSelection { return this.unscoped().getActiveFlat() ?? { ...EMPTY_SELECTION }; }
+  static setActiveFlat(selection: ActiveFlatSelection): void { this.unscoped().setActiveFlat(selection); }
+  static addResidence(name: string, address: string): ResidenceItem { return this.unscoped().addResidence(name, address); }
+  static addFlat(residenceId: string, name: string, flatNumber: string): FlatItem { return this.unscoped().addFlat(residenceId, name, flatNumber); }
+  static onboardMember(residenceId: string, flatId: string, _memberName: string): ActiveFlatSelection {
+    return this.unscoped().onboardMember(residenceId, flatId);
+  }
+  static syncFromDb(
+    residences: Array<{ id: bigint | string; name: string; address: string }>,
+    flats: Array<{ id: bigint | string; residenceId: bigint | string; name: string; flatNumber: string }>,
+  ): void { this.unscoped().syncFromDb(residences, flats); }
 }

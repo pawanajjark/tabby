@@ -6,8 +6,11 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all procedure arg schemas
+import * as LookupHomeInvitationProcedure from "../lookup_home_invitation_procedure";
 import * as RunAiProcedure from "../run_ai_procedure";
 
+export type LookupHomeInvitationArgs = __Infer<typeof LookupHomeInvitationProcedure.params>;
+export type LookupHomeInvitationResult = __Infer<typeof LookupHomeInvitationProcedure.returnType>;
 export type RunAiArgs = __Infer<typeof RunAiProcedure.params>;
 export type RunAiResult = __Infer<typeof RunAiProcedure.returnType>;
 

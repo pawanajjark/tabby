@@ -10,63 +10,110 @@ export interface AIConfigSnapshot {
   model: string;
 }
 
+export interface AIConfigStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+
 type BackendAIRunner = (request: BackendAIRequest) => Promise<string>;
+
+const viteEnv = (import.meta as ImportMeta & { env?: ImportMetaEnv }).env;
+const deploymentKey = (viteEnv?.VITE_OPENAI_API_KEY as string | undefined)?.trim() || '';
+const deploymentModel = (viteEnv?.VITE_OPENAI_MODEL as string | undefined)?.trim() || 'gpt-5.6-sol';
 
 function sanitizeModel(model?: string): string {
   const clean = model?.trim();
-  if (!clean) {
-    return (import.meta.env.VITE_OPENAI_MODEL as string | undefined)?.trim() || 'gpt-5.6-sol';
-  }
+  return clean || deploymentModel;
+}
+
+function normalizedIdentity(identity: string): string {
+  const clean = identity.trim().toLowerCase();
+  if (!clean) throw new Error('A SpacetimeDB identity is required for local AI configuration.');
   return clean;
 }
 
-const viteEnv = (import.meta as ImportMeta & { env?: ImportMetaEnv }).env;
-const envKey = (viteEnv?.VITE_OPENAI_API_KEY as string | undefined)?.trim() || '';
-const envModel = (viteEnv?.VITE_OPENAI_MODEL as string | undefined)?.trim() || 'gpt-5.6-sol';
-const initialKey = envKey || localStorage.getItem('tabby_openai_api_key')?.trim() || '';
-const initialModel = envModel || localStorage.getItem('tabby_openai_model')?.trim() || 'gpt-5.6-sol';
-
-// Keep localStorage synced with current .env configuration
-if (envKey) {
-  try {
-    localStorage.setItem('tabby_openai_api_key', envKey);
-  } catch { }
-}
-if (envModel) {
-  try {
-    localStorage.setItem('tabby_openai_model', envModel);
-  } catch { }
+function configStorageKey(identity: string): string {
+  return `tabby_ai_config_v2:${encodeURIComponent(normalizedIdentity(identity))}`;
 }
 
 export class AIProvider {
   private static runner: BackendAIRunner | null = null;
   private static backendConfigured = false;
-  private static directApiKey = initialKey;
-  private static modelName = initialModel;
+  private static storage: AIConfigStorage | null = null;
+  private static activeIdentity: string | null = null;
+  private static directApiKey = '';
+  private static modelName = deploymentModel;
   private static lastSnapshot: AIConfigSnapshot | null = null;
 
   static configureBackend(runner: BackendAIRunner) {
     this.runner = runner;
   }
 
+  /** Clears prior secrets before loading the selected connection identity. */
+  static setIdentityScope(identity: string, storage: AIConfigStorage = globalThis.localStorage): AIConfigSnapshot {
+    this.activeIdentity = null;
+    this.storage = storage;
+    this.directApiKey = '';
+    this.modelName = deploymentModel;
+    this.backendConfigured = false;
+    this.lastSnapshot = null;
+
+    const normalized = normalizedIdentity(identity);
+    this.activeIdentity = normalized;
+    try {
+      const parsed = JSON.parse(storage.getItem(configStorageKey(normalized)) ?? 'null') as Partial<AIConfigSnapshot> | null;
+      if (parsed && typeof parsed === 'object') {
+        this.directApiKey = typeof parsed.apiKey === 'string' ? parsed.apiKey.trim() : '';
+        this.modelName = sanitizeModel(typeof parsed.model === 'string' ? parsed.model : undefined);
+      }
+    } catch {
+      this.directApiKey = '';
+      this.modelName = deploymentModel;
+    }
+    return { apiKey: this.directApiKey, model: this.modelName };
+  }
+
+  static getIdentityScope(): string | null {
+    return this.activeIdentity;
+  }
+
+  static clearIdentityScope(identity: string, storage: AIConfigStorage = this.storage ?? globalThis.localStorage): void {
+    const normalized = normalizedIdentity(identity);
+    storage.removeItem(configStorageKey(normalized));
+    if (this.activeIdentity === normalized) {
+      this.activeIdentity = null;
+      this.directApiKey = '';
+      this.modelName = deploymentModel;
+      this.backendConfigured = false;
+      this.lastSnapshot = null;
+    }
+  }
+
+  private static persistActiveConfig(): void {
+    if (!this.activeIdentity || !this.storage) {
+      throw new Error('Select a SpacetimeDB identity before saving local AI configuration.');
+    }
+    const key = configStorageKey(this.activeIdentity);
+    if (!this.directApiKey && this.modelName === deploymentModel) {
+      this.storage.removeItem(key);
+      return;
+    }
+    this.storage.setItem(key, JSON.stringify({ apiKey: this.directApiKey, model: this.modelName }));
+  }
+
   static setConfigured(configured: boolean, modelName?: string, apiKey?: string) {
+    if (!this.activeIdentity) {
+      throw new Error('Select a SpacetimeDB identity before changing AI configuration.');
+    }
     this.backendConfigured = configured;
     if (modelName?.trim()) {
       this.modelName = sanitizeModel(modelName);
-      try {
-        localStorage.setItem('tabby_openai_model', this.modelName);
-      } catch { }
     }
     if (apiKey !== undefined) {
       this.directApiKey = apiKey.trim();
-      try {
-        if (this.directApiKey) {
-          localStorage.setItem('tabby_openai_api_key', this.directApiKey);
-        } else {
-          localStorage.removeItem('tabby_openai_api_key');
-        }
-      } catch { }
     }
+    this.persistActiveConfig();
   }
 
   static getModelName(): string {
@@ -78,7 +125,7 @@ export class AIProvider {
   }
 
   static hasApiKey(): boolean {
-    return Boolean(this.directApiKey) || this.backendConfigured;
+    return Boolean(this.directApiKey || deploymentKey) || this.backendConfigured;
   }
 
   static saveUndoSnapshot(apiKey: string, model: string) {
@@ -94,7 +141,7 @@ export class AIProvider {
   }
 
   private static async directFetch(request: BackendAIRequest, overrideKey?: string, overrideModel?: string): Promise<string> {
-    const key = overrideKey?.trim() || this.directApiKey;
+    const key = overrideKey?.trim() || this.directApiKey || deploymentKey;
     if (!key) throw new Error('No OpenAI API key configured.');
 
     const model = sanitizeModel(overrideModel || this.modelName);
@@ -170,13 +217,13 @@ export class AIProvider {
         return await this.runner(request);
       } catch (backendError) {
         console.warn('Backend OpenAI request failed, attempting direct fetch:', backendError);
-        if (this.directApiKey) {
+        if (this.directApiKey || deploymentKey) {
           return await this.directFetch(request);
         }
         throw backendError;
       }
     }
-    if (this.directApiKey) {
+    if (this.directApiKey || deploymentKey) {
       return await this.directFetch(request);
     }
     if (this.runner) {
@@ -186,7 +233,7 @@ export class AIProvider {
   }
 
   static async testConnection(apiKey?: string, model?: string): Promise<boolean> {
-    const keyToTest = apiKey?.trim() || this.directApiKey;
+    const keyToTest = apiKey?.trim() || this.directApiKey || deploymentKey;
     const modelToTest = sanitizeModel(model || this.modelName);
     if (!keyToTest) return false;
 

@@ -31,6 +31,55 @@ export const AiVerification = __t.object("AiVerification", {
 });
 export type AiVerification = __Infer<typeof AiVerification>;
 
+export const BillAllocation = __t.object("BillAllocation", {
+  id: __t.u64(),
+  billReviewId: __t.u64(),
+  flatId: __t.u64(),
+  memberIdentity: __t.identity(),
+  amountPaise: __t.i64(),
+  exempt: __t.bool(),
+  reason: __t.string(),
+});
+export type BillAllocation = __Infer<typeof BillAllocation>;
+
+export const BillLine = __t.object("BillLine", {
+  id: __t.u64(),
+  billReviewId: __t.u64(),
+  flatId: __t.u64(),
+  lineKey: __t.string(),
+  label: __t.string(),
+  amountPaise: __t.i64(),
+  position: __t.u32(),
+});
+export type BillLine = __Infer<typeof BillLine>;
+
+export const BillLineAllocation = __t.object("BillLineAllocation", {
+  id: __t.u64(),
+  billReviewId: __t.u64(),
+  billLineId: __t.u64(),
+  flatId: __t.u64(),
+  memberIdentity: __t.identity(),
+  amountPaise: __t.i64(),
+  exempt: __t.bool(),
+  reason: __t.string(),
+});
+export type BillLineAllocation = __Infer<typeof BillLineAllocation>;
+
+export const BillReview = __t.object("BillReview", {
+  id: __t.u64(),
+  flatId: __t.u64(),
+  title: __t.string(),
+  amountPaise: __t.i64(),
+  paidBy: __t.identity(),
+  expenseDate: __t.timestamp(),
+  category: __t.string(),
+  status: __t.string(),
+  createdBy: __t.identity(),
+  createdAt: __t.timestamp(),
+  updatedAt: __t.timestamp(),
+});
+export type BillReview = __Infer<typeof BillReview>;
+
 export const Conversation = __t.object("Conversation", {
   id: __t.string(),
   flatId: __t.u64(),
@@ -93,6 +142,50 @@ export const FlatRule = __t.object("FlatRule", {
 });
 export type FlatRule = __Infer<typeof FlatRule>;
 
+export const HomeInvitation = __t.object("HomeInvitation", {
+  code: __t.string(),
+  flatId: __t.u64(),
+  invitedBy: __t.identity(),
+  recipient: __t.string(),
+  status: __t.string(),
+  expiresAt: __t.timestamp(),
+  createdAt: __t.timestamp(),
+});
+export type HomeInvitation = __Infer<typeof HomeInvitation>;
+
+export const HomeMembership = __t.object("HomeMembership", {
+  id: __t.u64(),
+  identity: __t.identity(),
+  flatId: __t.u64(),
+  displayName: __t.string(),
+  role: __t.string(),
+  active: __t.bool(),
+  joinedAt: __t.timestamp(),
+});
+export type HomeMembership = __Infer<typeof HomeMembership>;
+
+export const HomeSettings = __t.object("HomeSettings", {
+  flatId: __t.u64(),
+  quietHoursStart: __t.string(),
+  quietHoursEnd: __t.string(),
+  defaultBillingSplit: __t.string(),
+  invitesEnabled: __t.bool(),
+  updatedBy: __t.identity(),
+  updatedAt: __t.timestamp(),
+});
+export type HomeSettings = __Infer<typeof HomeSettings>;
+
+export const InvitationPreview = __t.object("InvitationPreview", {
+  code: __t.string(),
+  flatId: __t.u64(),
+  flatName: __t.string(),
+  flatNumber: __t.string(),
+  residenceName: __t.string(),
+  invitedByName: __t.string(),
+  memberCount: __t.u32(),
+});
+export type InvitationPreview = __Infer<typeof InvitationPreview>;
+
 export const Member = __t.object("Member", {
   identity: __t.identity(),
   flatId: __t.u64(),
@@ -103,11 +196,62 @@ export type Member = __Infer<typeof Member>;
 export const MyAiStatus = __t.object("MyAiStatus", {});
 export type MyAiStatus = __Infer<typeof MyAiStatus>;
 
+export const MyBillAllocations = __t.object("MyBillAllocations", {});
+export type MyBillAllocations = __Infer<typeof MyBillAllocations>;
+
+export const MyBillLineAllocations = __t.object("MyBillLineAllocations", {});
+export type MyBillLineAllocations = __Infer<typeof MyBillLineAllocations>;
+
+export const MyBillLines = __t.object("MyBillLines", {});
+export type MyBillLines = __Infer<typeof MyBillLines>;
+
+export const MyBillReviews = __t.object("MyBillReviews", {});
+export type MyBillReviews = __Infer<typeof MyBillReviews>;
+
 export const MyConversationMessages = __t.object("MyConversationMessages", {});
 export type MyConversationMessages = __Infer<typeof MyConversationMessages>;
 
 export const MyConversations = __t.object("MyConversations", {});
 export type MyConversations = __Infer<typeof MyConversations>;
+
+export const MyExpenseSplits = __t.object("MyExpenseSplits", {});
+export type MyExpenseSplits = __Infer<typeof MyExpenseSplits>;
+
+export const MyExpenses = __t.object("MyExpenses", {});
+export type MyExpenses = __Infer<typeof MyExpenses>;
+
+export const MyFlatRules = __t.object("MyFlatRules", {});
+export type MyFlatRules = __Infer<typeof MyFlatRules>;
+
+export const MyHomeMemberships = __t.object("MyHomeMemberships", {});
+export type MyHomeMemberships = __Infer<typeof MyHomeMemberships>;
+
+export const MyHomeSettings = __t.object("MyHomeSettings", {});
+export type MyHomeSettings = __Infer<typeof MyHomeSettings>;
+
+export const MyHomes = __t.object("MyHomes", {});
+export type MyHomes = __Infer<typeof MyHomes>;
+
+export const MyMembers = __t.object("MyMembers", {});
+export type MyMembers = __Infer<typeof MyMembers>;
+
+export const MyPantryItemDetails = __t.object("MyPantryItemDetails", {});
+export type MyPantryItemDetails = __Infer<typeof MyPantryItemDetails>;
+
+export const MyPantryItems = __t.object("MyPantryItems", {});
+export type MyPantryItems = __Infer<typeof MyPantryItems>;
+
+export const MyReminderDeliveries = __t.object("MyReminderDeliveries", {});
+export type MyReminderDeliveries = __Infer<typeof MyReminderDeliveries>;
+
+export const MyReminders = __t.object("MyReminders", {});
+export type MyReminders = __Infer<typeof MyReminders>;
+
+export const MyResidences = __t.object("MyResidences", {});
+export type MyResidences = __Infer<typeof MyResidences>;
+
+export const MySharedMemories = __t.object("MySharedMemories", {});
+export type MySharedMemories = __Infer<typeof MySharedMemories>;
 
 export const PantryItem = __t.object("PantryItem", {
   id: __t.u64(),
@@ -119,6 +263,44 @@ export const PantryItem = __t.object("PantryItem", {
 });
 export type PantryItem = __Infer<typeof PantryItem>;
 
+export const PantryItemDetail = __t.object("PantryItemDetail", {
+  pantryItemId: __t.u64(),
+  flatId: __t.u64(),
+  category: __t.string(),
+  location: __t.string(),
+  lowStockThreshold: __t.i32(),
+  useSoon: __t.bool(),
+  updatedAt: __t.timestamp(),
+});
+export type PantryItemDetail = __Infer<typeof PantryItemDetail>;
+
+export const Reminder = __t.object("Reminder", {
+  id: __t.u64(),
+  flatId: __t.u64(),
+  title: __t.string(),
+  dueAt: __t.timestamp(),
+  completed: __t.bool(),
+  createdBy: __t.identity(),
+  createdAt: __t.timestamp(),
+});
+export type Reminder = __Infer<typeof Reminder>;
+
+export const ReminderDelivery = __t.object("ReminderDelivery", {
+  id: __t.u64(),
+  reminderId: __t.u64(),
+  flatId: __t.u64(),
+  title: __t.string(),
+  deliveredAt: __t.timestamp(),
+});
+export type ReminderDelivery = __Infer<typeof ReminderDelivery>;
+
+export const ReminderJob = __t.object("ReminderJob", {
+  id: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+  reminderId: __t.u64(),
+});
+export type ReminderJob = __Infer<typeof ReminderJob>;
+
 export const Residence = __t.object("Residence", {
   id: __t.u64(),
   name: __t.string(),
@@ -126,6 +308,13 @@ export const Residence = __t.object("Residence", {
   createdAt: __t.timestamp(),
 });
 export type Residence = __Infer<typeof Residence>;
+
+export const ScopedMember = __t.object("ScopedMember", {
+  identity: __t.identity(),
+  flatId: __t.u64(),
+  displayName: __t.string(),
+});
+export type ScopedMember = __Infer<typeof ScopedMember>;
 
 export const SharedMemory = __t.object("SharedMemory", {
   id: __t.u64(),

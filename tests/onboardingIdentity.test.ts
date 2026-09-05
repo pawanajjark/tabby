@@ -44,7 +44,11 @@ test('anonymous UI does not present the Sam demo identity as the current user', 
   assert.doesNotMatch(mainSource, /nameInput\.value\.trim\(\) \|\| 'Sam'/);
 });
 
-test('name and phone are enough to continue onboarding', () => {
+test('name and phone continue onboarding after SpacetimeDB establishes the session', () => {
+  AuthManager.observeConnection({
+    identity: 'c200000000000000000000000000000000000000000000000000000000000001',
+    tokenLabel: 'test-session',
+  });
   const result = AuthManager.signIn('+91 98765 43210', 'Pawan');
 
   assert.equal(result.success, true);

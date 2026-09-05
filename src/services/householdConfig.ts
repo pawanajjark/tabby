@@ -1,5 +1,3 @@
-// src/services/householdConfig.ts
-
 export type DietaryTag = 'vegetarian' | 'vegan' | 'eggetarian' | 'non_veg' | 'jain' | 'halal' | 'lactose_intolerant' | 'gluten_free' | 'no_alcohol';
 
 export interface RoommateProfile {
@@ -19,52 +17,54 @@ export interface SplitRule {
   enabled: boolean;
 }
 
+export interface HouseholdScope {
+  identity: string;
+  homeId: string;
+}
+
+export interface HouseholdConfigStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+
 export const DEFAULT_SPLIT_RULES: SplitRule[] = [
-  {
-    id: 'veg_no_meat',
-    name: 'Vegetarian Exemption',
-    description: 'Vegetarian and Vegan roommates do not pay for non-veg / meat / seafood items.',
-    category: 'non_veg',
-    exemptTags: ['vegetarian', 'vegan', 'jain'],
-    enabled: true,
-  },
-  {
-    id: 'vegan_no_dairy',
-    name: 'Vegan & Lactose-Free Exemption',
-    description: 'Vegan and Lactose-intolerant roommates do not pay for dedicated milk/cheese items.',
-    category: 'dairy',
-    exemptTags: ['vegan', 'lactose_intolerant'],
-    enabled: true,
-  },
-  {
-    id: 'no_alcohol',
-    name: 'Teetotaler Exemption',
-    description: 'Roommates who do not drink alcohol do not pay for alcoholic beverages.',
-    category: 'alcohol',
-    exemptTags: ['no_alcohol'],
-    enabled: true,
-  },
+  { id: 'veg_no_meat', name: 'Vegetarian Exemption', description: 'Vegetarian and Vegan roommates do not pay for non-veg / meat / seafood items.', category: 'non_veg', exemptTags: ['vegetarian', 'vegan', 'jain'], enabled: true },
+  { id: 'vegan_no_dairy', name: 'Vegan & Lactose-Free Exemption', description: 'Vegan and Lactose-intolerant roommates do not pay for dedicated milk/cheese items.', category: 'dairy', exemptTags: ['vegan', 'lactose_intolerant'], enabled: true },
+  { id: 'no_alcohol', name: 'Teetotaler Exemption', description: 'Roommates who do not drink alcohol do not pay for alcoholic beverages.', category: 'alcohol', exemptTags: ['no_alcohol'], enabled: true },
 ];
 
-const STORAGE_KEY = 'tabby_household_profiles';
-const RULES_KEY = 'tabby_household_rules';
+function storageKey(scope: HouseholdScope, kind: 'profiles' | 'rules'): string {
+  const identity = encodeURIComponent(scope.identity.trim().toLowerCase());
+  const homeId = encodeURIComponent(scope.homeId.trim());
+  if (!identity || !homeId) throw new Error('Identity and home are required to scope household data.');
+  return `tabby_household_v2:${identity}:${homeId}:${kind}`;
+}
 
-export class HouseholdConfigManager {
-  static getProfiles(): Record<string, RoommateProfile> {
+export class ScopedHouseholdConfigRepository {
+  private readonly scope: HouseholdScope;
+  private readonly storage: HouseholdConfigStorage;
+
+  constructor(
+    scope: HouseholdScope,
+    storage: HouseholdConfigStorage = globalThis.localStorage,
+  ) {
+    this.scope = scope;
+    this.storage = storage;
+  }
+
+  getProfiles(): Record<string, RoommateProfile> {
     try {
-      const data = localStorage.getItem(STORAGE_KEY);
-      return data ? JSON.parse(data) : {};
+      const parsed = JSON.parse(this.storage.getItem(storageKey(this.scope, 'profiles')) ?? '{}');
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
     } catch {
       return {};
     }
   }
 
-  static getProfile(identityHex: string, fallbackName = 'Roommate'): RoommateProfile {
+  getProfile(identityHex: string, fallbackName = 'Roommate'): RoommateProfile {
     const profiles = this.getProfiles();
-    if (profiles[identityHex]) {
-      return profiles[identityHex];
-    }
-    return {
+    return profiles[identityHex] ?? {
       identityHex,
       displayName: fallbackName,
       dietaryTags: [],
@@ -73,28 +73,39 @@ export class HouseholdConfigManager {
     };
   }
 
-  static saveProfile(profile: RoommateProfile) {
+  saveProfile(profile: RoommateProfile): void {
     const profiles = this.getProfiles();
     profiles[profile.identityHex] = profile;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles));
+    this.storage.setItem(storageKey(this.scope, 'profiles'), JSON.stringify(profiles));
   }
 
-  static getRules(): SplitRule[] {
+  getRules(): SplitRule[] {
     try {
-      const data = localStorage.getItem(RULES_KEY);
-      return data ? JSON.parse(data) : DEFAULT_SPLIT_RULES;
+      const stored = this.storage.getItem(storageKey(this.scope, 'rules'));
+      if (!stored) return DEFAULT_SPLIT_RULES.map(rule => ({ ...rule, exemptTags: [...rule.exemptTags] }));
+      const parsed = JSON.parse(stored);
+      return Array.isArray(parsed) ? parsed : [];
     } catch {
-      return DEFAULT_SPLIT_RULES;
+      return [];
     }
   }
 
-  static saveRules(rules: SplitRule[]) {
-    localStorage.setItem(RULES_KEY, JSON.stringify(rules));
+  saveRules(rules: SplitRule[]): void {
+    this.storage.setItem(storageKey(this.scope, 'rules'), JSON.stringify(rules));
   }
 
-  static toggleRule(ruleId: string) {
-    const rules = this.getRules();
-    const updated = rules.map(r => r.id === ruleId ? { ...r, enabled: !r.enabled } : r);
-    this.saveRules(updated);
+  toggleRule(ruleId: string): void {
+    this.saveRules(this.getRules().map(rule => rule.id === ruleId ? { ...rule, enabled: !rule.enabled } : rule));
+  }
+
+  clearScope(): void {
+    this.storage.removeItem(storageKey(this.scope, 'profiles'));
+    this.storage.removeItem(storageKey(this.scope, 'rules'));
+  }
+}
+
+export class HouseholdConfigManager {
+  static forScope(scope: HouseholdScope, storage?: HouseholdConfigStorage): ScopedHouseholdConfigRepository {
+    return new ScopedHouseholdConfigRepository(scope, storage);
   }
 }

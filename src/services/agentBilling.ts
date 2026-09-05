@@ -1,6 +1,6 @@
 // src/services/agentBilling.ts
 import { AIProvider } from './aiProvider';
-import { RoommateProfile, SplitRule, HouseholdConfigManager } from './householdConfig';
+import { RoommateProfile, SplitRule } from './householdConfig';
 
 export type ItemCategory = 'veg' | 'non_veg' | 'dairy' | 'alcohol' | 'household_utility' | 'personal' | 'general';
 
@@ -36,7 +36,7 @@ export class AgentBilling {
   static async parseAndSplitBill(
     input: { text?: string; imageBase64?: string; title?: string },
     roommates: RoommateProfile[],
-    rules: SplitRule[] = HouseholdConfigManager.getRules()
+    rules: SplitRule[],
   ): Promise<SplitResult> {
     const rawText = input.text?.trim() || '';
     const title = input.title?.trim() || 'Household expense';
