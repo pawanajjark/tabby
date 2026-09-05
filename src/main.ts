@@ -15,6 +15,7 @@ import {
   type MemoryFact,
   type SharedContextRecord,
 } from './services/tabbyBrain';
+import { syncGroceriesWidget, type WidgetGrocery } from './services/widgetSync';
 
 type MessageAgent = 'tabby' | AgentIntent;
 
@@ -454,6 +455,40 @@ function pantryData() {
   }));
 }
 
+function shoppingWidgetData(): WidgetGrocery[] {
+  return [...connection.db.shoppingItem.iter()]
+    .sort((a, b) => a.position - b.position)
+    .map(item => ({ name: item.name, quantity: item.quantity, unit: item.unit }));
+}
+
+let widgetSyncTimer = 0;
+function scheduleWidgetSync() {
+  window.clearTimeout(widgetSyncTimer);
+  widgetSyncTimer = window.setTimeout(() => {
+    const rows = [...connection.db.shoppingItem.iter()];
+    const updatedAt = rows.length
+      ? Math.max(...rows.map(row => new Date(row.generatedAt.toISOString()).getTime()))
+      : Date.now();
+    void syncGroceriesWidget(shoppingWidgetData(), updatedAt);
+  }, 50);
+}
+
+function publishShoppingPlan(plan: Awaited<ReturnType<typeof AgentShopping.generateShoppingPlan>>) {
+  const items = plan.items.slice(0, 20).map(item => ({
+    name: item.itemName,
+    quantity: item.suggestedQuantity,
+    unit: item.unit,
+  }));
+
+  void syncGroceriesWidget(items);
+  if (!isConnected) return;
+  try {
+    connection.reducers.replaceShoppingItems({ items });
+  } catch (error) {
+    console.warn('Unable to share the grocery plan with the household:', error);
+  }
+}
+
 function renderContextPanel() {
   const roommates = getRoommates();
   const memory = getSharedContext();
@@ -602,6 +637,7 @@ async function routeMessage(text: string) {
         addMessage({ role: 'assistant', agent: 'grocery', text: `Added ${quantity} ${unit} of ${name} to the shared pantry.` });
       } else {
         const plan = await AgentShopping.generateShoppingPlan(pantryData(), getRoommates(), text);
+        publishShoppingPlan(plan);
         addMessage({ role: 'assistant', agent: 'grocery', contentHtml: renderShoppingPlan(plan) });
       }
     } else if (analysis.intent === 'chef') {
@@ -781,10 +817,12 @@ const connection = DbConnection.builder()
         ensureConversation();
         syncAiStatus();
         renderAll();
+        scheduleWidgetSync();
       })
       .subscribe([
         tables.member,
         tables.pantryItem,
+        tables.shoppingItem,
         tables.expense,
         tables.expenseSplit,
         tables.sharedMemory,
@@ -816,6 +854,9 @@ connection.db.member.onUpdate(renderAll);
 connection.db.pantryItem.onInsert(renderAll);
 connection.db.pantryItem.onUpdate(renderAll);
 connection.db.pantryItem.onDelete(renderAll);
+connection.db.shoppingItem.onInsert(scheduleWidgetSync);
+connection.db.shoppingItem.onUpdate(scheduleWidgetSync);
+connection.db.shoppingItem.onDelete(scheduleWidgetSync);
 connection.db.sharedMemory.onInsert(renderAll);
 connection.db.sharedMemory.onUpdate(renderAll);
 connection.db.myAiStatus.onInsert(syncAiStatus);

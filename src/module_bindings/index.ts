@@ -39,6 +39,7 @@ import AddPantryItemReducer from "./add_pantry_item_reducer";
 import AppendConversationMessageReducer from "./append_conversation_message_reducer";
 import CreateConversationReducer from "./create_conversation_reducer";
 import RecordExpenseReducer from "./record_expense_reducer";
+import ReplaceShoppingItemsReducer from "./replace_shopping_items_reducer";
 import SetAiConfigReducer from "./set_ai_config_reducer";
 import SetDisplayNameReducer from "./set_display_name_reducer";
 import UpsertSharedMemoryReducer from "./upsert_shared_memory_reducer";
@@ -56,6 +57,7 @@ import MyConversationMessagesRow from "./my_conversation_messages_table";
 import MyConversationsRow from "./my_conversations_table";
 import PantryItemRow from "./pantry_item_table";
 import SharedMemoryRow from "./shared_memory_table";
+import ShoppingItemRow from "./shopping_item_table";
 
 /** Type-only namespace exports for generated type groups. */
 
@@ -142,6 +144,17 @@ const tablesSchema = __schema({
       { name: 'shared_memory_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, SharedMemoryRow),
+  shoppingItem: __table({
+    name: 'shopping_item',
+    indexes: [
+      { accessor: 'id', name: 'shopping_item_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'shopping_item_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, ShoppingItemRow),
   myAiStatus: __table({
     name: 'my_ai_status',
     indexes: [
@@ -172,6 +185,7 @@ const reducersSchema = __reducers(
   __reducerSchema("append_conversation_message", AppendConversationMessageReducer),
   __reducerSchema("create_conversation", CreateConversationReducer),
   __reducerSchema("record_expense", RecordExpenseReducer),
+  __reducerSchema("replace_shopping_items", ReplaceShoppingItemsReducer),
   __reducerSchema("set_ai_config", SetAiConfigReducer),
   __reducerSchema("set_display_name", SetDisplayNameReducer),
   __reducerSchema("upsert_shared_memory", UpsertSharedMemoryReducer),

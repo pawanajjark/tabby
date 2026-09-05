@@ -20,6 +20,18 @@ const pantryItem = table(
   },
 );
 
+const shoppingItem = table(
+  { name: 'shopping_item', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    name: t.string(),
+    quantity: t.f64(),
+    unit: t.string(),
+    position: t.u32(),
+    generated_at: t.timestamp(),
+  },
+);
+
 const expense = table(
   { name: 'expense', public: true },
   {
@@ -115,6 +127,7 @@ const sharedMemory = table(
 const spacetimedb = schema({
   member,
   pantryItem,
+  shoppingItem,
   expense,
   expenseSplit,
   chatMessage,
@@ -126,6 +139,12 @@ const spacetimedb = schema({
 });
 
 export default spacetimedb;
+
+const shoppingItemInput = t.object('ShoppingItemInput', {
+  name: t.string(),
+  quantity: t.f64(),
+  unit: t.string(),
+});
 
 const aiStatusRow = t.row('AiStatus', {
   configured: t.bool(),
@@ -323,6 +342,36 @@ export const add_pantry_item = spacetimedb.reducer(
         quantity: Math.max(0, quantity),
         unit: unit.trim() || 'items',
         updated_by: ctx.sender,
+      });
+    }
+  },
+);
+
+export const replace_shopping_items = spacetimedb.reducer(
+  { items: t.array(shoppingItemInput) },
+  (ctx, { items }) => {
+    if (items.length > 20) throw new SenderError('A shopping plan can contain at most 20 items.');
+
+    const cleanItems = items.map((item, position) => {
+      const name = item.name.trim();
+      const unit = item.unit.trim() || 'items';
+      if (!name || name.length > 120) throw new SenderError('Each shopping item needs a valid name.');
+      if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
+        throw new SenderError('Each shopping item needs a positive quantity.');
+      }
+      if (unit.length > 40) throw new SenderError('Shopping item units must be 40 characters or fewer.');
+      return { name, quantity: item.quantity, unit, position };
+    });
+
+    for (const existing of [...ctx.db.shoppingItem.iter()]) {
+      ctx.db.shoppingItem.id.delete(existing.id);
+    }
+
+    for (const item of cleanItems) {
+      ctx.db.shoppingItem.insert({
+        id: 0n,
+        ...item,
+        generated_at: ctx.timestamp,
       });
     }
   },

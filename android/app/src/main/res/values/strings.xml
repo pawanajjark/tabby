@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Tabby</string>
+    <string name="title_activity_main">Tabby</string>
+    <string name="package_name">com.tabby.household</string>
+    <string name="custom_url_scheme">com.tabby.household</string>
+    <string name="grocery_widget_name">Tabby groceries</string>
+    <string name="grocery_widget_description">See the household grocery list from your home screen.</string>
+</resources>

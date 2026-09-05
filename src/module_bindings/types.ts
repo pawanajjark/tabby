@@ -115,3 +115,20 @@ export const SharedMemory = __t.object("SharedMemory", {
 });
 export type SharedMemory = __Infer<typeof SharedMemory>;
 
+export const ShoppingItem = __t.object("ShoppingItem", {
+  id: __t.u64(),
+  name: __t.string(),
+  quantity: __t.f64(),
+  unit: __t.string(),
+  position: __t.u32(),
+  generatedAt: __t.timestamp(),
+});
+export type ShoppingItem = __Infer<typeof ShoppingItem>;
+
+export const ShoppingItemInput = __t.object("ShoppingItemInput", {
+  name: __t.string(),
+  quantity: __t.f64(),
+  unit: __t.string(),
+});
+export type ShoppingItemInput = __Infer<typeof ShoppingItemInput>;
+
