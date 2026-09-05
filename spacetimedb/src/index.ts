@@ -659,7 +659,7 @@ export const run_ai = spacetimedb.procedure(
     const requestBody: Record<string, unknown> = {
       model: requestModel,
       messages,
-      max_tokens: 1800,
+      max_completion_tokens: 2000,
     };
     if (args.json_mode) requestBody.response_format = { type: 'json_object' };
 

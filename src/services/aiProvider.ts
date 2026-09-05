@@ -21,18 +21,20 @@ function sanitizeModel(model?: string): string {
 }
 
 const envKey = (import.meta.env.VITE_OPENAI_API_KEY as string | undefined)?.trim() || '';
-const envModel = sanitizeModel(import.meta.env.VITE_OPENAI_MODEL as string | undefined);
-const initialKey = localStorage.getItem('tabby_openai_api_key')?.trim() || envKey;
-const initialModel = sanitizeModel(localStorage.getItem('tabby_openai_model')?.trim() || envModel);
+const envModel = (import.meta.env.VITE_OPENAI_MODEL as string | undefined)?.trim() || 'gpt-5.6-sol';
+const initialKey = envKey || localStorage.getItem('tabby_openai_api_key')?.trim() || '';
+const initialModel = envModel || localStorage.getItem('tabby_openai_model')?.trim() || 'gpt-5.6-sol';
 
-// Save initial key if from env
-if (initialKey) {
+// Keep localStorage synced with current .env configuration
+if (envKey) {
   try {
-    localStorage.setItem('tabby_openai_api_key', initialKey);
-    localStorage.setItem('tabby_openai_model', initialModel);
-  } catch {
-    // ignore localStorage errors in restricted environments
-  }
+    localStorage.setItem('tabby_openai_api_key', envKey);
+  } catch {}
+}
+if (envModel) {
+  try {
+    localStorage.setItem('tabby_openai_model', envModel);
+  } catch {}
 }
 
 export class AIProvider {
@@ -116,7 +118,7 @@ export class AIProvider {
     const requestBody: Record<string, unknown> = {
       model,
       messages,
-      max_tokens: 1800,
+      max_completion_tokens: 2000,
     };
     if (request.jsonMode) {
       requestBody.response_format = { type: 'json_object' };
@@ -131,13 +133,13 @@ export class AIProvider {
       body: JSON.stringify(requestBody),
     });
 
-    // If custom model returns 404/model_not_found, try automatic fallback to gpt-4o-mini
-    if (!response.ok && (response.status === 404 || response.status === 400) && model !== 'gpt-4o-mini') {
+    // If max_completion_tokens is unsupported by an older model, retry with max_tokens
+    if (!response.ok && response.status === 400) {
       const errorData = await response.json().catch(() => ({}));
       const message = (errorData as { error?: { message?: string } })?.error?.message || '';
-      if (message.toLowerCase().includes('model') || response.status === 404) {
-        console.warn(`Model ${model} unavailable, falling back to gpt-4o-mini...`);
-        requestBody.model = 'gpt-4o-mini';
+      if (message.includes('max_completion_tokens')) {
+        delete requestBody.max_completion_tokens;
+        requestBody.max_tokens = 2000;
         response = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: {
