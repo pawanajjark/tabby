@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <symbol id="food-default" viewBox="0 0 64 64">
+    <path fill="#d6b98b" d="M17 22h30l-3 32H20z"/>
+    <path fill="none" stroke="#8c714c" stroke-linecap="round" stroke-width="3" d="M24 25c0-8 16-8 16 0"/>
+    <path fill="#fff8eb" d="M25 33h14v11H25z"/>
+    <path fill="#5b8e62" d="M32 35c5-6 9 0 3 4 0 5-6 5-6 0-4-3-1-8 3-4Z"/>
+  </symbol>
+  <symbol id="food-eggs" viewBox="0 0 64 64">
+    <path fill="#b9915f" d="m12 29 8-9h25l7 9-4 24H16z"/>
+    <path fill="#e1be88" d="M12 29h40l-4 8H16z"/>
+    <ellipse cx="24" cy="27" rx="6" ry="9" fill="#fff8e9"/>
+    <ellipse cx="40" cy="27" rx="6" ry="9" fill="#f6e7c8"/>
+    <path fill="none" stroke="#8b6945" stroke-width="2" d="M18 41h28M24 38v12m16-12v12"/>
+  </symbol>
+  <symbol id="food-bread" viewBox="0 0 64 64">
+    <path fill="#c88946" d="M13 27c0-9 7-15 16-15h12c8 0 13 6 13 14v25H13z"/>
+    <path fill="#edbd73" d="M17 27c0-6 5-11 12-11h11c6 0 10 4 10 10v21H17z"/>
+    <path fill="none" stroke="#fff0c9" stroke-linecap="round" stroke-width="3" d="m26 21-4 7m14-7-4 7m14-5-4 7"/>
+  </symbol>
+  <symbol id="food-milk" viewBox="0 0 64 64">
+    <path fill="#d8e9f5" d="M22 12h19l5 11v31H17V23z"/>
+    <path fill="#fffaf0" d="M22 12h19v10H22z"/>
+    <path fill="#78a9c9" d="M17 28h29v18H17z"/>
+    <path fill="#fff" d="M24 33c4-6 12-6 16 0-5-2-11-2-16 0Z" opacity=".85"/>
+    <path fill="none" stroke="#517997" stroke-width="2" d="M22 12h19l5 11v31H17V23z"/>
+  </symbol>
+  <symbol id="food-apple" viewBox="0 0 64 64">
+    <path fill="#bb4439" d="M32 24c9-8 22 0 19 14-3 13-13 18-19 14-7 4-17-1-20-14-3-14 10-22 20-14Z"/>
+    <path fill="#d65b4e" d="M31 27c-7-5-15 0-14 9 1 5 3 8 6 11-3-11 2-17 8-20Z"/>
+    <path fill="none" stroke="#674d36" stroke-linecap="round" stroke-width="4" d="M32 25c0-6 1-9 5-12"/>
+    <path fill="#5f9560" d="M36 17c4-6 10-6 13-1-3 5-9 7-13 1Z"/>
+  </symbol>
+  <symbol id="food-banana" viewBox="0 0 64 64">
+    <path fill="#e1b93f" d="M14 21c9 18 24 24 38 13-3 17-18 24-31 15C11 42 8 30 14 21Z"/>
+    <path fill="#f2d45b" d="M16 24c9 14 21 19 32 12-5 11-16 15-25 9-8-5-10-14-7-21Z"/>
+    <path fill="#7d6938" d="m12 18 5 2-2 5-5-3zm38 14 5-2 2 4-5 3z"/>
+  </symbol>
+  <symbol id="food-rice" viewBox="0 0 64 64">
+    <path fill="#fff8e9" d="M15 31c1-13 33-13 34 0Z"/>
+    <path fill="#d9b166" d="M12 31h40c-2 15-9 22-20 22S14 46 12 31Z"/>
+    <path fill="#f2d69d" d="M17 34h30c-3 9-8 14-15 14s-12-5-15-14Z"/>
+    <g fill="#d8c59c"><ellipse cx="24" cy="25" rx="4" ry="2"/><ellipse cx="34" cy="22" rx="4" ry="2"/><ellipse cx="41" cy="27" rx="4" ry="2"/></g>
+  </symbol>
+  <symbol id="food-lentils" viewBox="0 0 64 64">
+    <path fill="#b96f3a" d="M12 29h40c-2 16-9 24-20 24S14 45 12 29Z"/>
+    <path fill="#d59050" d="M16 31h32c-4 8-28 8-32 0Z"/>
+    <g fill="#813d2e"><circle cx="23" cy="29" r="3"/><circle cx="32" cy="26" r="3"/><circle cx="41" cy="30" r="3"/><circle cx="29" cy="33" r="3"/><circle cx="37" cy="34" r="3"/></g>
+  </symbol>
+  <symbol id="food-oats" viewBox="0 0 64 64">
+    <path fill="#d7b16b" d="M17 18h30l-3 36H20z"/>
+    <path fill="#f5dfad" d="M20 23h24v25H20z"/>
+    <path fill="#a6783f" d="M16 14h32v8H16z"/>
+    <path fill="#c8964e" d="M25 31c6-6 14-2 14 5s-9 10-14 4c5 1 9-2 9-5s-4-5-9-4Z"/>
+  </symbol>
+  <symbol id="food-onion" viewBox="0 0 64 64">
+    <path fill="#bd83a6" d="M32 18c2 8 16 12 16 23 0 10-7 15-16 15s-16-5-16-15c0-11 14-15 16-23Z"/>
+    <path fill="#dca8c8" d="M31 25c-2 8-9 10-9 17 0 6 4 9 9 10-3-8-2-17 0-27Z"/>
+    <path fill="none" stroke="#72925e" stroke-linecap="round" stroke-width="3" d="M32 20c-5-7-3-11 0-13m1 13c5-6 8-7 11-7"/>
+  </symbol>
+  <symbol id="food-tomato" viewBox="0 0 64 64">
+    <circle cx="32" cy="37" r="19" fill="#cf493f"/>
+    <path fill="#e96355" d="M18 38c0-9 6-15 14-17-5 7-6 18-1 31-8-1-13-6-13-14Z"/>
+    <path fill="#568452" d="m32 22-7 5 2-8-8-2 8-3 1-8 5 7 8-4-4 8 8 3-9 2-4 8Z"/>
+  </symbol>
+  <symbol id="food-garlic" viewBox="0 0 64 64">
+    <path fill="#e4d5bd" d="M32 19c6 8 17 9 17 22 0 10-7 15-17 15s-17-5-17-15c0-13 11-14 17-22Z"/>
+    <path fill="none" stroke="#b9a78e" stroke-width="2" d="M32 24c-4 9-7 19 0 31m0-31c4 9 7 19 0 31"/>
+    <path fill="none" stroke="#6f8a56" stroke-linecap="round" stroke-width="3" d="M32 20c-2-7 0-10 4-13"/>
+  </symbol>
+  <symbol id="food-oil" viewBox="0 0 64 64">
+    <path fill="#6b8c56" d="M27 10h11v9H27z"/>
+    <path fill="#d5ad3c" d="M24 18h17l4 10v27H20V28z"/>
+    <path fill="#f0cf58" d="M25 27h15v23H25z"/>
+    <path fill="#fff1ae" d="M28 30h4v16h-4z" opacity=".7"/>
+    <path fill="none" stroke="#94782f" stroke-width="2" d="M24 18h17l4 10v27H20V28z"/>
+  </symbol>
+  <symbol id="food-potato" viewBox="0 0 64 64">
+    <path fill="#a97646" d="M14 38c0-14 10-25 25-22 13 2 16 16 10 27-7 13-35 12-35-5Z"/>
+    <path fill="#c18d55" d="M19 36c2-11 10-18 20-17-8 5-12 16-10 29-7-1-11-5-10-12Z"/>
+    <g fill="#785233"><circle cx="25" cy="31" r="2"/><circle cx="40" cy="27" r="2"/><circle cx="43" cy="42" r="2"/><circle cx="29" cy="46" r="2"/></g>
+  </symbol>
+  <symbol id="food-greens" viewBox="0 0 64 64">
+    <path fill="none" stroke="#527c4b" stroke-linecap="round" stroke-width="4" d="M31 53 26 24m7 29 5-31"/>
+    <path fill="#6aa663" d="M29 35C12 37 9 23 13 13c12 1 23 8 16 22Zm6-4c2-15 14-20 23-17 1 12-6 22-23 17Z"/>
+    <path fill="#8bbc72" d="M25 30C16 28 14 21 15 16c8 2 13 6 10 14Zm15-3c3-7 8-9 14-10-1 6-6 11-14 10Z"/>
+  </symbol>
+  <symbol id="food-carrot" viewBox="0 0 64 64">
+    <path fill="#dc7535" d="M24 23c8-4 16 0 17 8L27 56c-5-12-9-25-3-33Z"/>
+    <path fill="#f08d45" d="M27 26c3-2 7-1 9 2L27 49c-2-9-4-18 0-23Z"/>
+    <path fill="#5a8b56" d="M30 23C17 22 15 14 18 9c8 1 13 6 12 14Zm2 0c1-11 8-15 14-14 1 7-4 13-14 14Zm-1-2c-5-9 0-15 5-17 5 5 4 12-5 17Z"/>
+  </symbol>
+</svg>

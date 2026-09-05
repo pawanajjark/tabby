@@ -15,6 +15,7 @@ import { canPersistConversationMessage, encodeStoredConversationMessage } from '
 import * as householdFeatures from '../src/features/household/index.ts';
 import * as actionCoordinator from '../src/services/actionCoordinator.ts';
 import { AuthSessionStore } from '../src/services/authSession.ts';
+import { formatPantryQuantity, pantryImageKey, parsePantryCommand } from '../src/features/household/pantry.ts';
 
 class MemoryStorage {
   private readonly values: Map<string, string>;
@@ -263,4 +264,32 @@ test('pending progress placeholders cannot be saved as empty database messages',
   const pending = { id: 'progress-1', pending: true, text: undefined, contentHtml: undefined };
   assert.equal(canPersistConversationMessage(pending), false);
   assert.throws(() => encodeStoredConversationMessage(pending), /completed conversation messages/);
+});
+
+test('pantry chat commands keep the quantity out of the item name', () => {
+  assert.deepEqual(parsePantryCommand('add 2 clean apples to the pantry'), {
+    name: 'clean apples',
+    quantity: 2,
+    unit: 'items',
+  });
+  assert.deepEqual(parsePantryCommand('I bought 10 eggs'), {
+    name: 'eggs',
+    quantity: 10,
+    unit: 'items',
+  });
+  assert.deepEqual(parsePantryCommand('I bought 2 kg rice'), {
+    name: 'rice',
+    quantity: 2,
+    unit: 'kg',
+  });
+});
+
+test('pantry staples receive a stable food illustration with a safe fallback', () => {
+  assert.equal(pantryImageKey('eggs'), 'eggs');
+  assert.equal(pantryImageKey('fresh bananas'), 'banana');
+  assert.equal(pantryImageKey('leafy greens'), 'greens');
+  assert.equal(pantryImageKey('house blend spice'), 'default');
+  assert.equal(formatPantryQuantity(8, 'item'), '8 items');
+  assert.equal(formatPantryQuantity(2, 'kg'), '2 kg');
+  assert.equal(formatPantryQuantity(1, 'loaf'), '1 loaf');
 });

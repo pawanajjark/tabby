@@ -36,6 +36,7 @@ import {
   createCookingConfirmation,
   createBillReviewAction,
   createReminderAction,
+  parsePantryCommand,
   pantryViewItems,
   reminderViews,
   renderCookingConfirmation,
@@ -1559,12 +1560,9 @@ async function executeIntent(
   analysis: Awaited<ReturnType<typeof TabbyBrain.analyze>>,
 ): Promise<{ message: Omit<ConversationMessage, 'id'>; summary: string }> {
   if (intent === 'grocery') {
-    const purchase = text.match(/\b(?:bought|added|got|purchased|have|store|stock)\s+(\d+(?:\.\d+)?)\s*([a-zA-Z]+)?\s+(?:of\s+)?(.+)/i);
-    const pantryAddition = text.match(/\b(?:add|put|store|stock)\s+(.+?)\s+(?:to|in)\s+(?:the\s+)?pantry\b/i);
-    if (purchase || pantryAddition) {
-      const quantity = purchase ? Math.max(1, Math.round(Number(purchase[1]))) : 1;
-      const unit = purchase?.[2] || 'items';
-      const name = (purchase?.[3] || pantryAddition?.[1] || '').replace(/[.!?]+$/, '').trim();
+    const pantryCommand = parsePantryCommand(text);
+    if (pantryCommand) {
+      const { name, quantity, unit } = pantryCommand;
       const result = await addOrUpdatePantryItem(name, quantity, unit);
       if (result.status !== 'acknowledged') throw result.status === 'rejected' ? result.error : new Error('The pantry action is waiting for a connection.');
       const response = `Added ${quantity} ${unit} of ${name} to the shared pantry.`;
