@@ -106,7 +106,9 @@ export class TabbyBrain {
     const heuristicIntent = heuristicIntents[0];
     const heuristicFacts = this.extractFacts(message, recentHistory, existingContext);
     let intent = heuristicIntent;
+    let intents = heuristicIntents;
     let facts = heuristicFacts;
+    let usedAi = false;
 
     if (AIProvider.hasApiKey()) {
       const historySummary = recentHistory
@@ -122,6 +124,7 @@ export class TabbyBrain {
 
       const result = await AIProvider.generateJson<{
         intent?: AgentIntent;
+        intents?: AgentIntent[];
         facts?: Array<{
           category?: MemoryCategory;
           key?: string;
@@ -132,12 +135,13 @@ export class TabbyBrain {
         `Recent Conversation History:\n${historySummary || 'None'}\n\nExisting Shared Household Memories:\n${contextSummary || 'None'}\n\nNew Message to Analyze:\n${message}`,
         `You are TabbyBrain, an expert household intent classifier and high-recall insight extractor.
 
-Intent Routing Rules:
-- "chef": When the user requests a recipe, asks how to cook/make/prepare a dish or meal, or asks for meal suggestions / dishes to prepare, INCLUDING when they ask to make a dish based on home notes or preferences (e.g. "How do I make biriyani?", "Make a dish referring to our home notes", "What should we cook tonight?", "Cook dinner taking everyone's preferences into account").
-- "general": For general conversation, questions, or household coordination tasks like assigning chores/tasks (e.g. "Assign tasks based on home notes", "Who should clean the kitchen?", "Assign chores for this week").
-- "grocery": When discussing buying items, restocking, shopping lists, pantry additions, or tracking an Instamart order and its delivery ETA.
-- "billing": When discussing receipts, expenses, paying bills, splitting costs.
-- "context": ONLY when the user is explicitly stating, updating, refining, querying, or asking to view/remember personal/household preferences, food likes/dislikes, dietary rules, habits, allergies, or exceptions WITHOUT asking to make a dish or assign a task.
+INTENT CLASSIFICATION RULES:
+Classify the user's message into the primary "intent" and ordered list of "intents":
+- "chef": When the user expresses intent to cook, bake, make a dish, prepare food, ask for recipes or meal suggestions, INCLUDING when making a dish based on Home notes, dietary rules, or roommate preferences (e.g. "Make a dish referring to our home notes", "How do I make biriyani?", "Cook dinner based on preferences", "What can we cook tonight?").
+- "general": When the user asks for household coordination, assigning a task or chore (e.g. "Assign tasks based on home notes", "Who should clean the kitchen?", "Distribute chores for the week"), asks questions, or general conversation.
+- "grocery": When discussing buying items, restocking the pantry, shopping lists, pantry additions, or tracking an Instamart order and its delivery ETA.
+- "billing": When discussing receipts, expenses, paying bills, splitting costs, or tracking who owes what.
+- "context": ONLY when the user is explicitly stating, updating, refining, querying, or asking to view/remember personal/household preferences, food likes/dislikes, dietary rules, habits, allergies, or exceptions WITHOUT asking to make a dish, assign a task, buy groceries, or split a bill.
 
 MAXIMAL INSIGHT EXTRACTION RULES:
 Extract every explicit, implicit, contextual, conditional, and exception preference:
@@ -152,11 +156,26 @@ Extract every explicit, implicit, contextual, conditional, and exception prefere
 4. Allowed categories: "diet", "allergy", "food_preference", "routine", "household_note".
 5. Set visibility to "shared" for all food preferences, exceptions, allergies, diets, and routines.
 
-Return valid JSON with "intent" and "facts".`
+Return valid JSON with:
+{
+  "intent": "chef" | "general" | "grocery" | "billing" | "context",
+  "intents": ["chef" | "general" | "grocery" | "billing" | "context"],
+  "facts": [...]
+}`
       );
 
       if (result?.intent && ['grocery', 'chef', 'billing', 'context', 'general'].includes(result.intent)) {
         intent = result.intent;
+        usedAi = true;
+      }
+      if (Array.isArray(result?.intents) && result.intents.length > 0) {
+        const valid = result.intents.filter(i => ['grocery', 'chef', 'billing', 'context', 'general'].includes(i));
+        if (valid.length > 0) {
+          intents = valid;
+          usedAi = true;
+        }
+      } else if (usedAi) {
+        intents = [intent];
       }
 
       const aiFacts = (result?.facts ?? [])
@@ -170,30 +189,32 @@ Return valid JSON with "intent" and "facts".`
       if (aiFacts.length > 0) facts = this.mergeFacts(heuristicFacts, aiFacts);
     }
 
-    // Strict Guard: Prioritize chef for explicit cooking requests, general for task assignment
-    const isExplicitCookingRequest = CHEF_PATTERN.test(message);
-    const isTaskAssignmentRequest = TASK_ASSIGNMENT_PATTERN.test(message);
+    // When AI was not used or did not detect intent, apply heuristic fallback
+    if (!usedAi) {
+      const isExplicitCookingRequest = CHEF_PATTERN.test(message);
+      const isTaskAssignmentRequest = TASK_ASSIGNMENT_PATTERN.test(message);
 
-    if (isExplicitCookingRequest) {
-      intent = 'chef';
-    } else if (isTaskAssignmentRequest) {
-      intent = 'general';
-    } else if (facts.length > 0 || !isExplicitCookingRequest) {
-      if (intent === 'chef' && !isExplicitCookingRequest) {
-        intent = facts.length > 0 ? 'context' : 'general';
-      } else if (facts.length > 0 && intent !== 'grocery' && intent !== 'billing' && !isExplicitCookingRequest) {
-        intent = 'context';
+      if (isExplicitCookingRequest) {
+        intent = 'chef';
+      } else if (isTaskAssignmentRequest) {
+        intent = 'general';
+      } else if (facts.length > 0 || !isExplicitCookingRequest) {
+        if (intent === 'chef' && !isExplicitCookingRequest) {
+          intent = facts.length > 0 ? 'context' : 'general';
+        } else if (facts.length > 0 && intent !== 'grocery' && intent !== 'billing' && !isExplicitCookingRequest) {
+          intent = 'context';
+        }
       }
-    }
 
-    const intents = heuristicIntents.includes(intent)
-      ? heuristicIntents
-      : [intent, ...heuristicIntents.filter(candidate => candidate !== 'general')];
+      intents = heuristicIntents.includes(intent)
+        ? heuristicIntents
+        : [intent, ...heuristicIntents.filter(candidate => candidate !== 'general')];
+    }
 
     return {
       intent,
       intents,
-      confidence: intent === heuristicIntent ? 0.92 : 0.78,
+      confidence: usedAi ? 0.98 : (intent === heuristicIntent ? 0.92 : 0.78),
       privateFacts: facts,
       shareableFacts: facts.filter(fact => fact.visibility === 'shared'),
     };

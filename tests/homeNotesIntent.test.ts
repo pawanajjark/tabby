@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TabbyBrain } from '../src/services/tabbyBrain.ts';
 import { AgentCooking } from '../src/services/agentCooking.ts';
+import { AIProvider } from '../src/services/aiProvider.ts';
 import type { RoommateProfile } from '../src/services/householdConfig.ts';
 
 test('making a dish or cooking requests referring to home notes route to chef agent', async () => {
@@ -76,4 +77,26 @@ test('AgentCooking accepts home notes and serves requested dish while considerin
   assert.ok(plan.recipes.length > 0);
   assert.equal(plan.recipes[0].id, 'requested_biryani');
   assert.ok(plan.recipes[0].title.toLowerCase().includes('biryani'));
+});
+
+test('TabbyBrain.analyze uses AI to detect primary intent and multi-intent routes', async () => {
+  const originalHasKey = AIProvider.hasApiKey;
+  const originalGenerateJson = AIProvider.generateJson;
+
+  try {
+    AIProvider.hasApiKey = () => true;
+    AIProvider.generateJson = async () => ({
+      intent: 'chef',
+      intents: ['chef', 'grocery'],
+      facts: [],
+    }) as any;
+
+    const analysis = await TabbyBrain.analyze('Let us prepare our special secret feast');
+    assert.equal(analysis.intent, 'chef');
+    assert.deepEqual(analysis.intents, ['chef', 'grocery']);
+    assert.equal(analysis.confidence, 0.98);
+  } finally {
+    AIProvider.hasApiKey = originalHasKey;
+    AIProvider.generateJson = originalGenerateJson;
+  }
 });
