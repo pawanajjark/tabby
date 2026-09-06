@@ -15,7 +15,7 @@ npm install
 npm run dev
 ```
 
-The root package contains the Instamart runtime under `server/instamart`. `npm run dev` starts both the Vite application and the Instamart agent/HTTP bridge; stopping the parent command stops both. No workspace install, second terminal, or separate Instamart startup command is needed.
+The root package contains the Instamart runtime under `server/instamart`. `npm run dev` starts the Vite application, and the same parent origin serves the Instamart `/api/recipe-cart`, `/api/checkout`, and `/api/order-status` routes directly in development. No second terminal or separate Instamart startup command is needed for the normal workflow.
 
 Open the Vite address shown in the terminal. By default it connects to the cloud-hosted `tabby` database at Maincloud, so other people can share the same household state. Open it in multiple tabs to see realtime synchronization.
 

@@ -55,7 +55,7 @@ export interface InstamartCheckoutContext {
 }
 
 const configuredBridgeUrl = (import.meta.env.VITE_INSTAMART_BRIDGE_URL as string | undefined)?.trim();
-const bridgeUrl = (configuredBridgeUrl || (import.meta.env.DEV ? 'http://127.0.0.1:8787' : '')).replace(/\/$/, '');
+const bridgeUrl = (configuredBridgeUrl || '').replace(/\/$/, '');
 let databaseToken = '';
 
 export class AgentInstamart {

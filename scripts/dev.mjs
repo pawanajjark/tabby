@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process';
-import { request } from 'node:http';
 import { resolve } from 'node:path';
 
 const forwardedArgs = process.argv.slice(2);
@@ -50,36 +49,8 @@ function stop(exitCode = 0) {
 process.once('SIGINT', () => stop(0));
 process.once('SIGTERM', () => stop(0));
 
-function bridgeIsHealthy() {
-  return new Promise(resolveHealth => {
-    const health = request('http://127.0.0.1:8787/health', { method: 'GET', timeout: 500 }, response => {
-      response.resume();
-      resolveHealth(response.statusCode === 200);
-    });
-    health.once('timeout', () => { health.destroy(); resolveHealth(false); });
-    health.once('error', () => resolveHealth(false));
-    health.end();
-  });
-}
-
-async function waitForBridge(timeoutMs = 12_000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline && !stopping) {
-    if (await bridgeIsHealthy()) return;
-    await new Promise(resolveWait => setTimeout(resolveWait, 150));
-  }
-  throw new Error('Instamart developer agent did not become ready on port 8787.');
-}
-
 async function main() {
-  console.log('Starting Tabby web app and Instamart developer agent...');
-  if (await bridgeIsHealthy()) {
-    console.log('Using the Instamart developer agent already running on port 8787.');
-  } else {
-    start('instamart', resolve('node_modules/tsx/dist/cli.mjs'), ['watch', 'server/instamart/httpServer.ts']);
-    await waitForBridge();
-    console.log('Instamart developer agent is ready.');
-  }
+  console.log('Starting Tabby web app with same-origin Instamart API routes...');
   if (!stopping) start('tabby', resolve('node_modules/vite/bin/vite.js'), viteArgs);
 }
 

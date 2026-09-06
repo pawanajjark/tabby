@@ -5,6 +5,8 @@ import test from 'node:test';
 const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
 const packageSource = readFileSync(new URL('../package.json', import.meta.url), 'utf8');
 const serverSource = readFileSync(new URL('../server/instamartApi.ts', import.meta.url), 'utf8');
+const devScriptSource = readFileSync(new URL('../scripts/dev.mjs', import.meta.url), 'utf8');
+const viteConfigSource = readFileSync(new URL('../vite.config.ts', import.meta.url), 'utf8');
 
 test('restored shopping and recipe cards retain the payload needed by their actions', () => {
   assert.match(mainSource, /data-shop-items="\$\{encodeActionPayload\(shoppingItems\)\}"/);
@@ -33,14 +35,16 @@ test('every shopping entry point requires a synchronized selected home', () => {
   assert.match(mainSource, /document\.querySelectorAll<HTMLButtonElement>\('\[data-cook-recipe\]'\)[\s\S]*?button\.disabled = !shared\.available/);
 });
 
-test('the parent development command owns the Instamart service lifecycle', () => {
+test('the parent development command serves Instamart routes without a separate dev port', () => {
   const packageJson = JSON.parse(packageSource) as { scripts: Record<string, string>; workspaces?: string[] };
   assert.equal(packageJson.scripts.dev, 'node scripts/dev.mjs');
-  assert.equal(packageJson.scripts['dev:instamart'], 'tsx watch server/instamart/httpServer.ts');
   assert.equal(packageJson.scripts['mcp:instamart'], 'tsx server/instamart/mcpProxy.ts');
   assert.equal(packageJson.workspaces, undefined);
   assert.match(serverSource, /from '\.\/instamart\/clientFactory\.js'/);
   assert.doesNotMatch(serverSource, /instamart-mcp/);
+  assert.doesNotMatch(devScriptSource, /8787/);
+  assert.doesNotMatch(devScriptSource, /server\/instamart\/httpServer\.ts/);
+  assert.match(viteConfigSource, /handleInstamartApi/);
 });
 
 test('order status requests use the latest synchronized shopping state and persist tracking results', () => {

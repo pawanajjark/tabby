@@ -6,6 +6,7 @@ import { POST as orderStatus } from '../api/order-status.ts';
 import { readFileSync } from 'node:fs';
 
 const authorization = { Authorization: `Bearer ${'tabby-test-token-'.repeat(3)}`, 'Content-Type': 'application/json' };
+const viteConfigSource = readFileSync(new URL('../vite.config.ts', import.meta.url), 'utf8');
 
 function post(path: string, body: unknown): Request {
   return new Request(`https://tabby.example${path}`, {
@@ -54,8 +55,13 @@ test('deployed grocery routes require a connected Tabby session', async () => {
   assert.equal(response.status, 401);
 });
 
-test('the browser uses same-origin grocery routes in production and the local bridge in development', () => {
+test('the browser uses same-origin grocery routes in production and local dev routes on the parent app', () => {
   const source = readFileSync(new URL('../src/services/agentInstamart.ts', import.meta.url), 'utf8');
-  assert.match(source, /import\.meta\.env\.DEV \? 'http:\/\/127\.0\.0\.1:8787' : ''/);
+  assert.match(source, /const bridgeUrl = \(configuredBridgeUrl \|\| ''\)\.replace\(/);
+  assert.doesNotMatch(source, /127\.0\.0\.1:8787/);
+  assert.match(viteConfigSource, /handleInstamartApi/);
+  assert.ok(viteConfigSource.includes("'/api/recipe-cart'"));
+  assert.ok(viteConfigSource.includes("'/api/checkout'"));
+  assert.ok(viteConfigSource.includes("'/api/order-status'"));
   assert.match(source, /fetch\(`\$\{bridgeUrl\}\$\{path\}`/);
 });
