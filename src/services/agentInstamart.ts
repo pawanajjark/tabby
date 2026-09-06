@@ -54,7 +54,8 @@ export interface InstamartCheckoutContext {
   fallbackAddress?: { addressLine: string; label?: string };
 }
 
-const bridgeUrl = ((import.meta.env.VITE_INSTAMART_BRIDGE_URL as string | undefined) || 'http://127.0.0.1:8787').replace(/\/$/, '');
+const configuredBridgeUrl = (import.meta.env.VITE_INSTAMART_BRIDGE_URL as string | undefined)?.trim();
+const bridgeUrl = (configuredBridgeUrl || (import.meta.env.DEV ? 'http://127.0.0.1:8787' : '')).replace(/\/$/, '');
 let databaseToken = '';
 
 export class AgentInstamart {
@@ -93,7 +94,9 @@ async function request<T>(path: string, body: unknown): Promise<T> {
       body: JSON.stringify(body),
     });
   } catch {
-    throw new Error('Instamart is not ready. Stop any web-only process and run the parent command: npm run dev.');
+    throw new Error(import.meta.env.DEV
+      ? 'Instamart is not ready. Stop any web-only process and run the parent command: npm run dev.'
+      : 'Instamart checkout could not be reached. Please try again in a moment.');
   }
   const data = await response.json().catch(() => ({})) as T & { error?: string };
   if (!response.ok) throw new Error(data.error || `Instamart request failed (${response.status}).`);

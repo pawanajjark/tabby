@@ -21,6 +21,12 @@ Open the Vite address shown in the terminal. By default it connects to the cloud
 
 Tabby is installable as a PWA from a supported browser. The app shell opens offline and retains the existing local conversation state; shared pantry and household actions remain paused until the SpacetimeDB connection returns. PWA installation and service workers require HTTPS in production (localhost is allowed during development).
 
+## Deploy to Vercel
+
+Vercel automatically hosts the TypeScript functions in `api/`. Leave `VITE_INSTAMART_BRIDGE_URL` unset so the production browser calls the same deployment's `/api/recipe-cart`, `/api/checkout`, and `/api/order-status` routes. The hosted functions use the seeded catalogue by default and restore each cart from Tabby's synchronized shopping state between function invocations.
+
+To connect a Vercel environment to Swiggy's staging MCP instead, configure `INSTAMART_MODE=staging`, `SWIGGY_MCP_URL`, and `SWIGGY_ACCESS_TOKEN` as server-side Vercel environment variables. Do not expose the access token through a `VITE_` variable.
+
 For local backend work instead, run `spacetime start`, use `spacetime dev tabby --server local --yes` to rebuild/publish/regenerate bindings, and set `VITE_SPACETIMEDB_URI=ws://localhost:3000` for the frontend.
 
 ## Chat commands
