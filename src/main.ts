@@ -112,6 +112,7 @@ interface ConversationMessage {
   role: 'user' | 'assistant';
   agent: MessageAgent;
   text?: string;
+  attachmentName?: string;
   contentHtml?: string;
   pending?: boolean;
   progressLabel?: string;
@@ -205,8 +206,8 @@ app.innerHTML = `
                 <span>Add receipt</span>
               </label>
               <input id="receipt-input" type="file" accept="image/png,image/jpeg,image/webp" />
-              <span id="attachment-name"></span>
             </div>
+            <span id="attachment-name"></span>
             <button class="send-button" type="submit">Send</button>
           </div>
         </form>
@@ -888,6 +889,7 @@ function renderConversation() {
       <article class="message ${message.role} ${message.pending ? 'pending' : ''} ${message.delivery ?? ''}">
         ${agentLabel}
         <div class="message-content">
+          ${message.attachmentName ? `<div class="message-attachment" aria-label="Attached receipt">📎 ${escapeHtml(message.attachmentName)}</div>` : ''}
           ${message.contentHtml ?? `<p>${escapeHtml(message.text ?? '')}</p>`}
         </div>
         ${message.routes?.length ? `<ol class="message-route-results" aria-label="Request progress">${message.routes.map(route => `<li class="message-route-result route-${route.status}"><strong>${escapeHtml(route.intent === 'grocery' ? 'Pantry' : route.intent === 'chef' ? 'Kitchen' : route.intent === 'billing' ? 'Bills' : route.intent === 'context' ? 'Home notes' : 'Tabby')}</strong><span>${escapeHtml(route.error || route.summary || (route.status === 'pending' ? 'Working…' : route.status === 'unavailable' ? 'Unavailable' : 'Done'))}</span></li>`).join('')}</ol>` : ''}
@@ -1758,6 +1760,7 @@ async function routeMessage(text: string, responseMessageId?: string) {
     attachedReceiptName = '';
     (document.querySelector<HTMLInputElement>('#receipt-input')!).value = '';
     document.querySelector('#attachment-name')!.textContent = '';
+    document.querySelector('#chat-form')?.classList.remove('has-attachment');
     renderContextPanel();
   }
 }
@@ -2799,10 +2802,12 @@ AIProvider.configureBackend(request => connection.procedures.runAi({
 
 async function sendUserMessage(text: string) {
   const commandKey = `message:${crypto.randomUUID()}`;
+  const attachmentName = attachedReceiptName || undefined;
   const message = addMessage({
     role: 'user',
     agent: 'general',
     text,
+    attachmentName,
     delivery: isConnected ? 'sending' : 'unsent',
     commandKey,
   }, false);
@@ -2879,6 +2884,7 @@ document.querySelector<HTMLInputElement>('#receipt-input')!.addEventListener('ch
   if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
     showToast('Choose a PNG, JPG, or WebP receipt image.', 'error');
     input.value = '';
+    document.querySelector('#chat-form')?.classList.remove('has-attachment');
     return;
   }
   const reader = new FileReader();
@@ -2886,6 +2892,7 @@ document.querySelector<HTMLInputElement>('#receipt-input')!.addEventListener('ch
     attachedReceipt = String(reader.result);
     attachedReceiptName = file.name;
     document.querySelector('#attachment-name')!.textContent = file.name;
+    document.querySelector('#chat-form')?.classList.add('has-attachment');
   };
   reader.readAsDataURL(file);
 });
