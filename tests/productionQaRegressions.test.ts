@@ -279,6 +279,15 @@ test('the mobile composer grows with multiline input instead of clipping to a fi
   assert.match(mobileStyles, /\.composer textarea\s*\{[^}]*max-height:\s*160px[^}]*overflow-y:\s*auto/s);
 });
 
+test('the mobile composer opens the software keyboard without triggering input zoom', () => {
+  const page = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const styles = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const mobileStyles = styles.slice(styles.indexOf('@media (max-width: 740px)'));
+
+  assert.match(page, /name="viewport" content="[^"]*interactive-widget=resizes-content[^"]*"/);
+  assert.match(mobileStyles, /\.composer textarea\s*\{[^}]*font-size:\s*(?:1rem|16px)/s);
+});
+
 test('the mobile shelf puts household content before utilities and reveals quick actions on demand', () => {
   const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
   const styles = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');

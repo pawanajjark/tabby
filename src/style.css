@@ -2021,7 +2021,8 @@ dialog::backdrop { background: rgba(44, 41, 37, 0.44); }
     padding: 11px 2px;
     overflow-x: hidden;
     overflow-y: auto;
-    font-size: 0.84rem;
+    /* iOS zooms focused form controls below 16px, which makes the chat view jump. */
+    font-size: 1rem;
   }
 
   .composer-footer { display: contents; }
