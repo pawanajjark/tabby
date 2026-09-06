@@ -6,6 +6,9 @@ export interface RoommateProfile {
   dietaryTags: DietaryTag[];
   cookingHabits: string[];
   customSplitExclusions: string[];
+  foodPreferences?: string[];
+  allergies?: string[];
+  notes?: string[];
 }
 
 export interface SplitRule {

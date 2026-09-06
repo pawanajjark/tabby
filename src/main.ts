@@ -1053,6 +1053,18 @@ function getRoommates(): RoommateProfile[] {
         if (!profile.dietaryTags.includes(diet)) profile.dietaryTags.push(diet);
       }
       if (fact.category === 'routine' && !profile.cookingHabits.includes(fact.value)) profile.cookingHabits.push(fact.value);
+      if (fact.category === 'food_preference') {
+        profile.foodPreferences = profile.foodPreferences || [];
+        if (!profile.foodPreferences.includes(fact.value)) profile.foodPreferences.push(fact.value);
+      }
+      if (fact.category === 'allergy') {
+        profile.allergies = profile.allergies || [];
+        if (!profile.allergies.includes(fact.value)) profile.allergies.push(fact.value);
+      }
+      if (fact.category === 'household_note') {
+        profile.notes = profile.notes || [];
+        if (!profile.notes.includes(fact.value)) profile.notes.push(fact.value);
+      }
     }
     result.push(profile);
   }
@@ -1804,6 +1816,10 @@ function renderSplit(split: SplitResult) {
   return renderBillReview(currentBillDraft, currentSharedAvailability().available, currentBillPhase, window.matchMedia('(max-width: 720px)').matches);
 }
 
+function isOrderTrackingRequest(text: string): boolean {
+  return /\b(?:track|tracking|eta|delivery status|where(?:'s| is) my order)\b|\bstatus\b.{0,24}\border\b|\border\b.{0,24}\bstatus\b/i.test(text);
+}
+
 async function executeIntent(
   intent: AgentIntent,
   text: string,
@@ -1860,7 +1876,7 @@ async function executeIntent(
     return { message: { role: 'assistant', agent: intent, text: response }, summary: response };
   }
   if (intent === 'chef') {
-    const plan = await AgentCooking.generateRecipes(pantryData(), getRoommates(), text);
+    const plan = await AgentCooking.generateRecipes(pantryData(), getRoommates(), text, getSharedContext());
     return { message: { role: 'assistant', agent: intent, contentHtml: renderCookingPlan(plan) }, summary: plan.headline };
   }
   if (!AIProvider.hasApiKey()) {
@@ -1868,18 +1884,34 @@ async function executeIntent(
     return { message: { role: 'assistant', agent: 'general', text: response }, summary: response };
   }
   const recentConversation = conversation.slice(-10).map(message => `${message.role}: ${message.text || 'Structured household result'}`).join('\n');
-  const householdContext = getSharedContext().slice(0, 12).map(memory => `${memory.subjectName}: ${memory.value}`).join('; ');
+  const sharedRecords = getSharedContext();
+  const householdContext = sharedRecords.slice(0, 20).map(memory => `${memory.subjectName}: [${memory.category}] ${memory.value}`).join('; ');
+  const roommateList = getRoommates().map(r => {
+    const parts = [r.displayName];
+    if (r.dietaryTags.length) parts.push(`Diet: ${r.dietaryTags.join(', ')}`);
+    if (r.cookingHabits.length) parts.push(`Routines: ${r.cookingHabits.join(', ')}`);
+    if (r.foodPreferences?.length) parts.push(`Preferences: ${r.foodPreferences.join(', ')}`);
+    if (r.allergies?.length) parts.push(`Allergies: ${r.allergies.join(', ')}`);
+    if (r.notes?.length) parts.push(`Notes: ${r.notes.join(', ')}`);
+    return parts.join(' | ');
+  }).join('\n');
   const generated = await AIProvider.generateText(
     `Recent conversation:\n${recentConversation}\n\nCurrent request:\n${text}`,
-    `You are Tabby, a concise household coordination assistant. Do not claim an action happened unless it was performed. Shared household context: ${householdContext || 'No shared memories yet.'}`,
+    `You are Tabby, an intelligent and concise household coordination assistant.
+Household Members:
+${roommateList || 'None specified.'}
+
+Home Notes & Household Preferences:
+${householdContext || 'No shared memories yet.'}
+
+GUIDELINES:
+- TASK ASSIGNMENT: When the user asks to assign a task, distribute chores, or plan household duties (especially referring to Home Notes or preferences), carefully consult the Home Notes, roommate routines, preferences, habits, and availability. Fairly and intelligently allocate or suggest task assignments that respect these preferences and routines, while directly serving and fulfilling the user's specific request.
+- GENERAL REQUESTS: Always consider all recorded Home Notes and household preferences when responding, but directly serve the user's explicit request.
+- ACCURACY: Do not claim an action was permanently performed in the database unless it was executed.`,
     attachedReceipt,
   );
   const response = generated || 'The AI connection could not complete that request.';
   return { message: { role: 'assistant', agent: 'general', text: response }, summary: response.slice(0, 120) };
-}
-
-function isOrderTrackingRequest(text: string): boolean {
-  return /\b(?:track|tracking|eta|delivery status|where(?:'s| is) my order)\b|\bstatus\b.{0,24}\border\b|\border\b.{0,24}\bstatus\b/i.test(text);
 }
 
 async function routeMessage(text: string, responseMessageId?: string) {

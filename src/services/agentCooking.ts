@@ -36,26 +36,45 @@ export interface CookingPlan {
 export class AgentCooking {
   /**
    * Agent 2: Generates recipes tailored to current pantry inventory,
-   * roommate dietary rules, and frequent cooking habits.
+   * roommate dietary rules, frequent cooking habits, and shared Home notes.
    */
   static async generateRecipes(
     pantryItems: PantryItemData[],
     roommates: RoommateProfile[],
     request = '',
+    homeNotes: Array<{ subjectName?: string; category?: string; value?: string }> = [],
   ): Promise<CookingPlan> {
     const pantrySummary = pantryItems.map(i => `${i.name} (${i.quantity} ${i.unit})`).join(', ') || 'Empty pantry';
-    const roommateProfilesText = roommates.map(r => 
-      `${r.displayName}: Diets=[${r.dietaryTags.join(', ')}], Habits=[${r.cookingHabits.join(', ')}]`
-    ).join('\n');
+    const roommateProfilesText = roommates.map(r => {
+      const parts = [`${r.displayName}:`];
+      if (r.dietaryTags.length) parts.push(`Diets=[${r.dietaryTags.join(', ')}]`);
+      if (r.cookingHabits.length) parts.push(`Habits=[${r.cookingHabits.join(', ')}]`);
+      if (r.allergies?.length) parts.push(`Allergies=[${r.allergies.join(', ')}]`);
+      if (r.foodPreferences?.length) parts.push(`Preferences=[${r.foodPreferences.join(', ')}]`);
+      if (r.notes?.length) parts.push(`Notes=[${r.notes.join(', ')}]`);
+      return parts.join(' ');
+    }).join('\n') || 'No roommates registered';
+
+    const homeNotesSummary = homeNotes.length > 0
+      ? homeNotes.map(n => `- ${n.subjectName || 'Household'}: [${n.category || 'note'}] ${n.value}`).join('\n')
+      : 'No additional home notes recorded.';
 
     if (AIProvider.hasApiKey()) {
       const prompt = `You are Tabby's Chef agent.
-Create the recipe the user requested. If no dish is named, suggest 3 practical recipes. Respect every dietary constraint.
-Prefer available pantry ingredients and make safe, realistic substitutions when they help. Creative household jugaad is welcome, such as using bread as a pizza base, but never suggest an unsafe or implausible swap.
-If the requested dish still needs ingredients, keep the requested dish and clearly identify what must be bought. Never claim an ingredient is in the pantry unless it appears below.
+The user wants to make a dish or meal with request: "${request || 'Suggest something good to cook from the pantry.'}".
+
+CRITICAL INSTRUCTIONS:
+1. SERVE THE USER'S REQUEST: If the user specifically asked for a particular dish, meal, cuisine, or style (e.g. biryani, pasta, soup, curry), you MUST make and provide recipes for that requested dish.
+2. REFER TO AND HONOR ALL HOME NOTES & PREFERENCES: Thoroughly consult all Home Notes, roommate dietary rules, allergies, food likes/dislikes, habits, and exceptions listed below.
+3. ADAPT TO CONSTRAINTS: Tailor the requested dish (using ingredient choices, safe substitutions, or variations) so it respects all roommates' dietary restrictions and preferences from the Home Notes while strictly fulfilling what the user asked to make.
+4. If no specific dish is named, suggest 3 practical recipes that satisfy everyone's preferences from the Home Notes and pantry.
+5. INGREDIENTS & PANTRY: Prefer available pantry ingredients and make safe, realistic substitutions when they help. Creative household jugaad is welcome, but never suggest an unsafe or implausible swap. If the requested dish still needs ingredients, keep the requested dish and clearly identify what must be bought in the ingredients list (with inPantry=false). Never claim an ingredient is in the pantry unless it appears in the stock list below.
 
 User request:
 ${request || 'Suggest something good to cook from the pantry.'}
+
+Home notes & household preferences:
+${homeNotesSummary}
 
 Current Pantry Stock:
 ${pantrySummary}
@@ -95,7 +114,7 @@ Provide output as a valid JSON object matching this schema:
 
       const aiResult = await AIProvider.generateJson<CookingPlan>(
         prompt,
-        'You are an inventive, practical household chef. Return JSON only. Ingredient names must describe the ingredient actually used, and substitutions must preserve food safety and dietary requirements.'
+        'You are an inventive, practical household chef. Return JSON only. Always serve the user\'s requested dish while rigorously respecting all Home Notes, allergies, dietary constraints, and roommate preferences.'
       );
 
       if (aiResult && Array.isArray(aiResult.recipes) && aiResult.recipes.length > 0) {
@@ -139,13 +158,14 @@ Provide output as a valid JSON object matching this schema:
       }
     }
 
-    return this.generateHeuristicRecipes(pantryItems, roommates, request);
+    return this.generateHeuristicRecipes(pantryItems, roommates, request, homeNotes);
   }
 
   private static generateHeuristicRecipes(
     pantryItems: PantryItemData[],
     roommates: RoommateProfile[],
     request = '',
+    _homeNotes: Array<{ subjectName?: string; category?: string; value?: string }> = [],
   ): CookingPlan {
     const pantryNames = pantryItems.map(p => p.name.toLowerCase().trim());
     const has = (name: string) => pantryNames.some(p => p.includes(name.toLowerCase()));
@@ -159,6 +179,7 @@ Provide output as a valid JSON object matching this schema:
       if (roommate.dietaryTags.includes('vegetarian') && tags.includes('Non-Veg')) return false;
       if (roommate.dietaryTags.includes('vegan') && (tags.includes('Non-Veg') || tags.includes('Dairy'))) return false;
       if (roommate.dietaryTags.includes('lactose_intolerant') && tags.includes('Dairy')) return false;
+      if (roommate.allergies?.some(a => tags.some(t => t.toLowerCase().includes(a.toLowerCase())))) return false;
       return true;
     };
 
