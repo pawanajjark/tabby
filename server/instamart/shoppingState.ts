@@ -1,3 +1,4 @@
+// Short-lived runtime state; durable state remains synchronized by Tabby's browser connection.
 export type ShoppingPhase = 'idle' | 'selected' | 'cart_ready' | 'awaiting_confirmation' | 'ordered' | 'failed';
 
 export interface RequestedItem { name: string; quantity: number; unit: string; }

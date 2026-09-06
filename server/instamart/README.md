@@ -1,6 +1,6 @@
-# Tabby Instamart MCP
+# Tabby Instamart services
 
-An isolated developer integration for Swiggy Instamart's 19-tool MCP server. It provides:
+The parent Tabby project hosts this developer integration for Swiggy Instamart's 19-tool MCP server. It provides:
 
 - a local MCP proxy so Tabby agents can discover and call every upstream Instamart tool;
 - a deterministic recipe-to-cart agent for address selection, product matching, pack sizing, coupons, and payment-method selection;
@@ -27,7 +27,7 @@ The Tabby module now includes an owner-scoped `shopping_agent_state` table and t
 The table, view, and reducers are published to Tabby's existing Maincloud database. The safe publish form is:
 
 ```powershell
-spacetime publish tabby --module-path ../spacetimedb --server maincloud --delete-data=never
+spacetime publish tabby --module-path spacetimedb --server maincloud --delete-data=never
 $env:OPENAI_MODEL='gpt-5.5'
 npm run dev
 ```
@@ -58,7 +58,7 @@ Swiggy uses OAuth 2.1 with PKCE, not API keys. Tokens should be kept in memory o
   "mcpServers": {
     "tabby-instamart": {
       "command": "npm",
-      "args": ["--prefix", "E:/Code/tabby/instamart-mcp", "run", "mcp"]
+      "args": ["--prefix", "E:/Code/tabby", "run", "mcp:instamart"]
     }
   }
 }

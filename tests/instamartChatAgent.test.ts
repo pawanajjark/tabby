@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { InstamartChatAgent } from '../src/chatAgent.js';
-import { MockInstamartClient } from '../src/mockClient.js';
-import { MemoryShoppingStateStore } from '../src/shoppingState.js';
+import { InstamartChatAgent } from '../server/instamart/chatAgent.js';
+import { MockInstamartClient } from '../server/instamart/mockClient.js';
+import { MemoryShoppingStateStore } from '../server/instamart/shoppingState.js';
 
 test('routes common search language without an OpenAI key', async () => {
   const agent = new InstamartChatAgent(new MockInstamartClient(), {});

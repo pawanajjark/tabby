@@ -3,19 +3,20 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "workspaces": [
-    "instamart-mcp"
-  ],
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:web": "vite",
-    "dev:instamart": "npm --prefix instamart-mcp run dev",
-    "build": "npm --prefix instamart-mcp run build && tsc --noEmit && vite build",
-    "build:instamart": "npm --prefix instamart-mcp run build",
+    "dev:instamart": "tsx watch server/instamart/httpServer.ts",
+    "start:instamart": "tsx server/instamart/httpServer.ts",
+    "mcp:instamart": "tsx server/instamart/mcpProxy.ts",
+    "build": "tsc --noEmit && vite build",
     "test": "tsx --test tests/*.test.ts",
-    "test:instamart": "npm --prefix instamart-mcp test"
+    "test:instamart": "tsx --test tests/instamartRecipeAgent.test.ts tests/instamartChatAgent.test.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.0",
+    "dotenv": "^17.4.2",
+    "openai": "^7.10.0",
     "spacetimedb": "2.10.*"
   },
   "devDependencies": {

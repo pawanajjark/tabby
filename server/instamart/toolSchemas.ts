@@ -1,3 +1,4 @@
+// Instamart MCP schemas hosted by the parent Tabby service.
 import type { McpToolDefinition } from './types.js';
 
 const object = (properties: Record<string, unknown>, required: string[] = []): Record<string, unknown> => ({

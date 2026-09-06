@@ -1,3 +1,4 @@
+// Seeded catalogue used by local development and preview deployments.
 import type { McpToolDefinition, ToolClient } from './types.js';
 import { INSTAMART_TOOL_SCHEMAS, validateToolArguments } from './toolSchemas.js';
 
