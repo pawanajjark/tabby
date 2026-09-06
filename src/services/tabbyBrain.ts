@@ -25,11 +25,14 @@ export interface BrainAnalysis {
   shareableFacts: MemoryFact[];
 }
 
+const CHEF_PATTERN = /\b(recipe|recipes|how (?:to|do i|can i) (?:cook|make|bake|prepare)|what can (?:i|we) (?:cook|make)|what should (?:i|we) (?:cook|make)|suggest (?:a |some )?(?:recipe|meal|dinner|lunch|breakfast|dish)|let's cook|cook (?:something|dinner|lunch|breakfast|a dish|food)|(?:(?:i\s+)?(?:want|wanna|would like|plan|planning)\s+)?(?:to\s+)?(?:cook|make|bake|prepare)\s+(?:a\s+|an\s+|some\s+|the\s+)?[a-z][a-z -]+)\b/i;
+const TASK_ASSIGNMENT_PATTERN = /\b(?:assign|allocat(?:e|ing)|distribut(?:e|ing)|chore|chores|task|tasks|duty|duties|who (?:should|will|can) (?:do|clean|cook|take out|wash|handle)|whose turn)\b/i;
+
 const INTENT_RULES: Array<[AgentIntent, RegExp]> = [
   ['billing', /\b(bill|expense|receipt|split|paid|owe|owed|cost|total|reimburse)\b|(?:₹|rs\.?|inr|\$)\s*[\d,]+|(?:^|\n).+[-:]\s*\d+(?:\.\d{1,2})?\s*$/im],
-  ['context', /\b(i like|i love|i prefer|i hate|i don't like|i dislike|i avoid|i eat|i don't eat|except when|allergic|allergy|vegetarian|vegan|eggetarian|halal|jain|diet|preference|preferences|who likes|who eats|what do we know|remember)\b/i],
-  ['chef', /\b(recipe|recipes|how (?:to|do i|can i) (?:cook|make|bake|prepare)|what can (?:i|we) (?:cook|make)|what should (?:i|we) (?:cook|make)|suggest (?:a |some )?(?:recipe|meal|dinner|lunch)|let's cook|cook (?:something|dinner|lunch|breakfast)|(?:(?:i\s+)?(?:want|wanna|would like|plan|planning)\s+)?(?:to\s+)?(?:cook|make|bake|prepare)\s+(?:a\s+|an\s+|some\s+|the\s+)?[a-z][a-z -]+)\b/i],
+  ['chef', CHEF_PATTERN],
   ['grocery', /\b(bought|buy|pantry|grocery|groceries|restock|stock|shopping|ran out|need more|track(?:ing)?|delivery|delivered|order status|eta)\b|\bwhere(?:'s| is) my order\b|\bstatus\b.{0,24}\border\b|\border\b.{0,24}\bstatus\b/i],
+  ['context', /\b(i like|i love|i prefer|i hate|i don't like|i dislike|i avoid|i eat|i don't eat|except when|allergic|allergy|vegetarian|vegan|eggetarian|halal|jain|diet|preference|preferences|who likes|who eats|what do we know|remember|home notes?)\b/i],
 ];
 
 const SAFE_SHARED_CATEGORIES = new Set<MemoryCategory>(['diet', 'allergy', 'food_preference', 'routine', 'household_note']);
@@ -85,6 +88,9 @@ export class TabbyBrain {
 
   /** Returns every matching domain in the stable priority declared by INTENT_RULES. */
   static detectIntents(message: string): AgentIntent[] {
+    if (TASK_ASSIGNMENT_PATTERN.test(message) && !CHEF_PATTERN.test(message)) {
+      return ['general'];
+    }
     const matches = INTENT_RULES
       .filter(([, pattern]) => pattern.test(message))
       .map(([intent]) => intent);
@@ -127,11 +133,11 @@ export class TabbyBrain {
         `You are TabbyBrain, an expert household intent classifier and high-recall insight extractor.
 
 Intent Routing Rules:
-- "context": When the user states, updates, refines, queries, or clarifies personal/household preferences, food likes/dislikes, dietary rules, habits, allergies, or exceptions.
-- "chef": ONLY when the user explicitly requests a recipe, asks how to cook/make a dish, or asks for meal suggestions right now (e.g. "How do I make biriyani?", "Give me a dinner recipe", "What can I cook?").
+- "chef": When the user requests a recipe, asks how to cook/make/prepare a dish or meal, or asks for meal suggestions / dishes to prepare, INCLUDING when they ask to make a dish based on home notes or preferences (e.g. "How do I make biriyani?", "Make a dish referring to our home notes", "What should we cook tonight?", "Cook dinner taking everyone's preferences into account").
+- "general": For general conversation, questions, or household coordination tasks like assigning chores/tasks (e.g. "Assign tasks based on home notes", "Who should clean the kitchen?", "Assign chores for this week").
 - "grocery": When discussing buying items, restocking, shopping lists, pantry additions, or tracking an Instamart order and its delivery ETA.
 - "billing": When discussing receipts, expenses, paying bills, splitting costs.
-- "general": General conversation or queries that don't match above.
+- "context": ONLY when the user is explicitly stating, updating, refining, querying, or asking to view/remember personal/household preferences, food likes/dislikes, dietary rules, habits, allergies, or exceptions WITHOUT asking to make a dish or assign a task.
 
 MAXIMAL INSIGHT EXTRACTION RULES:
 Extract every explicit, implicit, contextual, conditional, and exception preference:
@@ -164,10 +170,15 @@ Return valid JSON with "intent" and "facts".`
       if (aiFacts.length > 0) facts = this.mergeFacts(heuristicFacts, aiFacts);
     }
 
-    // Strict Guard: Chef intent should ONLY trigger on explicit recipe or cooking requests
-    const isExplicitCookingRequest = /\b(?:recipe|recipes|how (?:to|do i|can i) (?:cook|make|bake|prepare)|what can (?:i|we) (?:cook|make)|what should (?:i|we) (?:cook|make)|suggest (?:a |some )?(?:recipe|meal|dinner|lunch)|let's cook|cook (?:something|dinner|lunch|breakfast)|(?:(?:i\s+)?(?:want|wanna|would like|plan|planning)\s+)?(?:to\s+)?(?:cook|make|bake|prepare)\s+(?:a\s+|an\s+|some\s+|the\s+)?[a-z][a-z -]+)\b/i.test(message);
+    // Strict Guard: Prioritize chef for explicit cooking requests, general for task assignment
+    const isExplicitCookingRequest = CHEF_PATTERN.test(message);
+    const isTaskAssignmentRequest = TASK_ASSIGNMENT_PATTERN.test(message);
 
-    if (facts.length > 0 || !isExplicitCookingRequest) {
+    if (isExplicitCookingRequest) {
+      intent = 'chef';
+    } else if (isTaskAssignmentRequest) {
+      intent = 'general';
+    } else if (facts.length > 0 || !isExplicitCookingRequest) {
       if (intent === 'chef' && !isExplicitCookingRequest) {
         intent = facts.length > 0 ? 'context' : 'general';
       } else if (facts.length > 0 && intent !== 'grocery' && intent !== 'billing' && !isExplicitCookingRequest) {
