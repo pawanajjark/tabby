@@ -17,6 +17,8 @@ npm run dev -- --host 0.0.0.0
 
 Open the Vite address shown in the terminal. By default it connects to the cloud-hosted `tabby` database at Maincloud, so other people can share the same household state. Open it in multiple tabs to see realtime synchronization.
 
+Tabby is installable as a PWA from a supported browser. The app shell opens offline and retains the existing local conversation state; shared pantry and household actions remain paused until the SpacetimeDB connection returns. PWA installation and service workers require HTTPS in production (localhost is allowed during development).
+
 For local backend work instead, run `spacetime start`, use `spacetime dev tabby --server local --yes` to rebuild/publish/regenerate bindings, and set `VITE_SPACETIMEDB_URI=ws://localhost:3000` for the frontend.
 
 ## Chat commands

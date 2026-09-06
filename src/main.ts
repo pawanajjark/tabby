@@ -1,4 +1,5 @@
 import './style.css';
+import { registerSW } from 'virtual:pwa-register';
 import { DbConnection, tables } from './module_bindings';
 import { Timestamp } from 'spacetimedb';
 import { AppStore, type AppRoute } from './app/store';
@@ -3416,3 +3417,18 @@ setContextOpen(false);
 showFreshSessionOnboarding();
 connectToDatabase();
 syncAiStatus();
+
+const updateServiceWorker = registerSW({
+  immediate: true,
+  onOfflineReady() {
+    showToast('Tabby is ready to open offline. Shared actions reconnect when the pantry is online.', 'success');
+  },
+  onNeedRefresh() {
+    if (window.confirm('A new version of Tabby is ready. Update now?')) {
+      void updateServiceWorker(true);
+    }
+  },
+  onRegisterError(error) {
+    console.error('Tabby could not enable offline app support.', error);
+  },
+});
