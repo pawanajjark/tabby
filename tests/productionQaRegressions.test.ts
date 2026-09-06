@@ -16,6 +16,7 @@ import * as householdFeatures from '../src/features/household/index.ts';
 import * as actionCoordinator from '../src/services/actionCoordinator.ts';
 import { AuthSessionStore } from '../src/services/authSession.ts';
 import { formatPantryQuantity, pantryImageKey, parsePantryCommand } from '../src/features/household/pantry.ts';
+import { routeNavigation } from '../src/app/routeShell.ts';
 
 class MemoryStorage {
   private readonly values: Map<string, string>;
@@ -118,16 +119,22 @@ test('accounts and homes are rendered once in the account chooser', () => {
 test('join home lists available homes without asking for an invitation code', () => {
   const state = createIdentityState('join-home');
   state.homes = [
-    { id: 7n, name: 'Maple Home', label: '7A', residenceName: 'Maple House', active: false },
-    { id: 8n, name: 'Cedar Home', label: '8B', residenceName: 'Cedar House', active: true },
+    { id: 7n, name: 'Maple Home', label: '7A', residenceName: 'Maple House', memberCount: 4, active: false },
+    { id: 8n, name: 'Cedar Home', label: '8B', residenceName: 'Cedar House', memberCount: 2, active: true },
   ];
 
   const html = renderIdentityFlow(state);
 
   assert.match(html, /AVAILABLE HOMES/);
   assert.match(html, /data-identity-home="7"/);
-  assert.match(html, /Click to join this home/);
+  assert.match(html, /4 members/);
+  assert.match(html, /data-identity-action="confirm-join-home"[^>]*disabled/);
   assert.doesNotMatch(html, /invite code|invitation/i);
+
+  state.selectedHomeId = 7n;
+  const selectedHtml = renderIdentityFlow(state);
+  assert.match(selectedHtml, /data-identity-home="7" aria-pressed="true"/);
+  assert.doesNotMatch(selectedHtml, /data-identity-action="confirm-join-home"[^>]*disabled/);
 });
 
 test('join home does not claim the database is empty before homes synchronize', () => {
@@ -168,7 +175,7 @@ test('checking a first-task pantry item immediately refreshes the save action', 
   assert.match(renderBlock, /action\.textContent = `Save \$\{selected\.length\}/);
 });
 
-test('selecting an available home finishes joining without opening pantry setup', () => {
+test('selecting an available home waits for explicit confirmation before joining', () => {
   const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
   const renderStart = mainSource.indexOf('function renderIdentityFlowUi()');
   const renderEnd = mainSource.indexOf('\nasync function handleIdentityAction', renderStart);
@@ -177,10 +184,17 @@ test('selecting an available home finishes joining without opening pantry setup'
   const homeSelectionEnd = renderBlock.indexOf("mount.querySelectorAll<HTMLButtonElement>('[data-identity-account]')", homeSelectionStart);
   const homeSelectionBlock = renderBlock.slice(homeSelectionStart, homeSelectionEnd);
 
-  assert.match(homeSelectionBlock, /identityEntryRoute !== 'settings'/);
-  assert.match(homeSelectionBlock, /closeIdentityFlow\(\)/);
-  assert.match(homeSelectionBlock, /navigateTo\('conversations'\)/);
-  assert.doesNotMatch(homeSelectionBlock, /first-task|seedFirstTaskChoices/);
+  assert.match(homeSelectionBlock, /selectedHomeId: homeId/);
+  assert.match(homeSelectionBlock, /route: 'join-home'/);
+  assert.match(homeSelectionBlock, /renderIdentityFlowUi\(\);/);
+  assert.match(homeSelectionBlock, /\[data-identity-home="\$\{homeId\}"\]`\)\?\.focus\(\);\s*return;/);
+
+  const actionStart = mainSource.indexOf('async function handleIdentityAction');
+  const actionEnd = mainSource.indexOf("\ndocument.querySelector('#identity-flow-close')", actionStart);
+  const actionBlock = mainSource.slice(actionStart, actionEnd);
+  assert.match(actionBlock, /action === 'confirm-join-home'/);
+  assert.match(actionBlock, /switchHome\(identityState, identityState\.selectedHomeId, ports\)/);
+  assert.match(actionBlock, /identityCompletionVisible = true/);
 });
 
 test('the active conversation never reports its messages as unread', () => {
@@ -228,6 +242,55 @@ test('shared controls are unavailable with a clear no-home reason', () => {
     available: false,
     reason: 'Choose a home before using shared household data.',
   });
+});
+
+test('empty conversation examples send immediately instead of only filling the composer', () => {
+  const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+  const startersStart = mainSource.indexOf('const EMPTY_CONVERSATION_STARTERS');
+  const startersEnd = mainSource.indexOf('\nfunction renderEmptyConversationHome()', startersStart);
+  const bindStart = mainSource.indexOf('function bindEmptyConversationStarters()');
+  const bindEnd = mainSource.indexOf('\nfunction renderConversation()', bindStart);
+  const sendStart = mainSource.indexOf('function sendComposerMessage(');
+  const sendEnd = mainSource.indexOf("\ndocument.querySelector<HTMLFormElement>('#chat-form')", sendStart);
+
+  assert.match(mainSource.slice(startersStart, startersEnd), /I bought milk and eggs/);
+  assert.match(mainSource.slice(startersStart, startersEnd), /Split ₹900 for electricity/);
+  assert.match(mainSource.slice(startersStart, startersEnd), /What can we cook tonight\?/);
+  assert.match(mainSource.slice(bindStart, bindEnd), /sendComposerMessage\(button\.dataset\.emptyPrompt/);
+  assert.doesNotMatch(mainSource.slice(bindStart, bindEnd), /composer\.focus\(\)/);
+  assert.match(mainSource.slice(sendStart, sendEnd), /void sendUserMessage\(text\)/);
+});
+
+test('mobile navigation keeps More as the only shelf entry point in the phone chrome', () => {
+  const mobileNavigation = routeNavigation('mobile-bottom-nav');
+  assert.match(mobileNavigation, /<span>More<\/span>/);
+  assert.doesNotMatch(mobileNavigation, /Shelf|Home shelf/);
+  assert.equal(mobileNavigation.match(/<svg/g)?.length, 4);
+});
+
+test('the mobile composer grows with multiline input instead of clipping to a fixed row', () => {
+  const styles = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const mobileStart = styles.indexOf('@media (max-width: 740px)');
+  const mobileStyles = styles.slice(mobileStart);
+
+  assert.match(mobileStyles, /\.conversation-shell\s*\{[^}]*grid-template-rows:\s*minmax\(0, 1fr\) auto/s);
+  assert.match(mobileStyles, /\.composer-zone\s*\{[^}]*min-height:\s*82px/s);
+  assert.doesNotMatch(mobileStyles, /\.composer-zone\s*\{[^}]*\n\s*height:\s*82px/s);
+  assert.match(mobileStyles, /\.composer textarea\s*\{[^}]*max-height:\s*160px[^}]*overflow-y:\s*auto/s);
+});
+
+test('the mobile shelf puts household content before utilities and reveals quick actions on demand', () => {
+  const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+  const styles = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const mobileStyles = styles.slice(styles.indexOf('@media (max-width: 740px)'));
+
+  assert.match(mainSource, /id="mobile-home-name"/);
+  assert.match(mainSource, /data-reveal-shelf-form="quick-pantry-form"/);
+  assert.match(mainSource, /data-reveal-shelf-form="quick-rule-form"/);
+  assert.match(mobileStyles, /\.shelf-pantry\s*\{\s*order:\s*3/);
+  assert.match(mobileStyles, /\.shelf-people\s*\{\s*order:\s*6/);
+  assert.match(mobileStyles, /\.mobile-context-actions\s*\{[^}]*order:\s*7/s);
+  assert.match(mobileStyles, /#context-panel \.quick-pantry-form\.is-open/);
 });
 
 test('chat work rejects with a useful error when its deadline expires', async () => {

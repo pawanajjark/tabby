@@ -38,6 +38,7 @@ import {
   createBillReviewAction,
   createReminderAction,
   parsePantryCommand,
+  paiseInputValue,
   pantryViewItems,
   reminderViews,
   renderCookingConfirmation,
@@ -51,6 +52,7 @@ import {
   scheduleDeletion,
   setBillDate,
   setBillPayer,
+  rupeeInputToPaise,
   startBillRecord,
   undoDeletion,
   deletionActionWhenDue,
@@ -132,6 +134,7 @@ app.innerHTML = `
       <div class="brand-block top-bar-brand">
         <div class="wordmark">tabby</div>
         <p>Home, handled.</p>
+        <span class="mobile-home-name" id="mobile-home-name" hidden></span>
       </div>
 
       <div class="rail-card home-switcher" id="rail-flat-card">
@@ -197,7 +200,12 @@ app.innerHTML = `
           <textarea id="chat-input" rows="1" maxlength="3000" placeholder="Message Tabby" required></textarea>
           <div class="composer-footer">
             <div class="attachment-group">
-              <label class="attachment-button" for="receipt-input">Add receipt</label>
+              <label class="attachment-button" for="receipt-input">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M8.5 12.5 14.9 6a3.2 3.2 0 0 1 4.6 4.5l-8.2 8.3a5 5 0 0 1-7.1-7.1l8.4-8.4" />
+                </svg>
+                <span>Add receipt</span>
+              </label>
               <input id="receipt-input" type="file" accept="image/png,image/jpeg,image/webp" />
               <span id="attachment-name"></span>
             </div>
@@ -255,6 +263,7 @@ app.innerHTML = `
       </section>
       <section class="context-section shelf-pantry">
         <div class="section-heading"><h3>In the kitchen</h3><span id="pantry-count">0</span></div>
+        <button type="button" class="shelf-section-action" data-reveal-shelf-form="quick-pantry-form" aria-controls="quick-pantry-form" aria-expanded="false" data-shared-action>Add item</button>
         <form id="quick-pantry-form" class="quick-pantry-form">
           <input id="quick-pantry-name" placeholder="Add an item, such as milk" autocomplete="off" required />
           <input id="quick-pantry-qty" type="number" min="1" value="1" />
@@ -264,6 +273,7 @@ app.innerHTML = `
       </section>
       <section class="context-section shelf-agreements">
         <div class="section-heading"><h3>House agreements</h3><span id="rules-count">0</span></div>
+        <button type="button" class="shelf-section-action" data-reveal-shelf-form="quick-rule-form" aria-controls="quick-rule-form" aria-expanded="false" data-shared-action>Add agreement</button>
         <form id="quick-rule-form" class="quick-rule-form">
           <select id="quick-rule-type">
             <option value="explicit">Agreed</option>
@@ -457,6 +467,7 @@ const outboxes = new Map<string, PersistentOutbox>();
 const pendingDeletions = new Map<string, PendingDeletion>();
 const pendingDeletionHomes = new Map<string, string>();
 const pendingDeletionTimers = new Map<string, number>();
+const pendingConversationCreates = new Set<string>();
 
 const FIRST_TASK_STARTERS = [
   { id: 'starter-milk', label: 'Milk', selected: false },
@@ -747,11 +758,30 @@ function syncConversationFromDatabase() {
   syncingConversation = false;
 }
 
+function activeConversationStorageKey(): string {
+  const identity = currentIdentity || 'local';
+  const homeId = activeHomeSelection().flatId;
+  return homeId
+    ? `tabby_active_conversation:${identity}:${homeId}`
+    : `tabby_active_conversation:${identity}`;
+}
+
+function rememberActiveConversation(id: string) {
+  localStorage.setItem(activeConversationStorageKey(), id);
+  localStorage.setItem('tabby_active_conversation_default', id);
+}
+
+function requestConversationCreation(id: string) {
+  if (pendingConversationCreates.has(id) || householdGateway.conversations().some(row => row.id === id)) return;
+  pendingConversationCreates.add(id);
+  void connection.reducers.createConversation({ conversationId: id, title: 'New conversation' })
+    .catch(err => console.warn('createConversation notice:', err))
+    .finally(() => pendingConversationCreates.delete(id));
+}
+
 function selectConversation(id: string) {
   activeConversationId = id;
-  const identity = currentIdentity || 'local';
-  localStorage.setItem(`tabby_active_conversation:${identity}`, id);
-  localStorage.setItem('tabby_active_conversation_default', id);
+  rememberActiveConversation(id);
   conversationFeatureState = reduceConversationState(conversationFeatureState, {
     type: 'select', conversationId: id,
   });
@@ -778,48 +808,40 @@ function ensureConversation() {
 
   const rows = householdGateway.conversations();
   if (currentIdentity) rows.forEach(row => registerConversationArtifact(currentIdentity, row.id));
-  const saved = (currentIdentity && localStorage.getItem(`tabby_active_conversation:${currentIdentity}`)) ||
-    localStorage.getItem('tabby_active_conversation_default') ||
-    activeConversationId;
+  const saved = localStorage.getItem(activeConversationStorageKey());
   const selected = rows.find(row => row.id === saved) ||
     rows.sort((a, b) => Number(b.updatedAt.microsSinceUnixEpoch - a.updatedAt.microsSinceUnixEpoch))[0];
 
   if (selected) {
     selectConversation(selected.id);
   } else {
-    const id = saved || activeConversationId || crypto.randomUUID();
+    const id = saved || crypto.randomUUID();
     activeConversationId = id;
-    if (currentIdentity) localStorage.setItem(`tabby_active_conversation:${currentIdentity}`, id);
-    localStorage.setItem('tabby_active_conversation_default', id);
-    try {
-      connection.reducers.createConversation({ conversationId: id, title: 'New conversation' });
-    } catch (err) {
-      console.warn('createConversation notice:', err);
-    }
-    // Sync any existing local messages to SpacetimeDB!
-    conversation.forEach(msg => {
-      if (msg.id !== 'welcome' && msg.role) {
-        persistConversationMessage(msg);
-      }
+    rememberActiveConversation(id);
+    conversationFeatureState = reduceConversationState(conversationFeatureState, {
+      type: 'select', conversationId: id,
     });
+    conversation = getLocalConversation(id);
+    renderConversation();
+    requestConversationCreation(id);
   }
   renderConversationPicker();
 }
 
 const EMPTY_CONVERSATION_STARTERS = [
   {
-    label: 'What should we restock this week?',
-    prompt: 'What should we restock this week?',
+    label: 'I bought milk and eggs',
+    prompt: 'I bought milk and eggs',
     icon: '<path d="M4 10h16l-2 9H6l-2-9Zm4 0 4-6 4 6M9 14v2m3-2v2m3-2v2"/>',
   },
   {
-    label: 'What can we cook with what’s here?',
-    prompt: 'What can we cook with what’s here?',
+    label: 'What can we cook tonight?',
+    prompt: 'What can we cook tonight?',
     icon: '<path d="M6 3v6a3 3 0 0 0 3 3V3m-3 4h3m6-4v18m0-18c3 2 4 5 4 8h-4"/>',
   },
   {
-    label: 'Split this bill fairly.',
-    prompt: 'Help me review and split a bill fairly.',
+    label: 'Split ₹900 for electricity',
+    prompt: 'Split ₹900 for electricity',
     icon: '<path d="M6 3h12v18l-2-1-2 1-2-1-2 1-2-1-2 1V3Zm3 5h6m-6 4h6m-6 4h4"/>',
   },
 ] as const;
@@ -839,11 +861,8 @@ function renderEmptyConversationHome(): string {
 function bindEmptyConversationStarters() {
   document.querySelectorAll<HTMLButtonElement>('[data-empty-prompt]').forEach(button => {
     button.addEventListener('click', () => {
-      const composer = document.querySelector<HTMLTextAreaElement>('#chat-input');
-      if (!composer) return;
-      composer.value = button.dataset.emptyPrompt || '';
-      composer.dispatchEvent(new Event('input', { bubbles: true }));
-      composer.focus();
+      button.disabled = true;
+      sendComposerMessage(button.dataset.emptyPrompt || '');
     });
   });
 }
@@ -1313,7 +1332,7 @@ function renderContextPanel() {
         <span>${escapeHtml(item.name)}</span>
         <div class="pantry-actions">
           <strong>${item.quantity} ${escapeHtml(item.unit)}</strong>
-          <button type="button" class="pantry-item-del" data-remove-pantry="${escapeHtml(item.id)}" data-shared-action title="Remove item" ${!deletionAvailable || !/^\d+$/.test(item.id) ? 'disabled' : ''}>×</button>
+          <button type="button" class="pantry-item-del" data-remove-pantry="${escapeHtml(item.id)}" data-shared-action aria-label="Remove ${escapeHtml(item.name)}" title="Remove item" ${!deletionAvailable || !/^\d+$/.test(item.id) ? 'disabled' : ''}>×</button>
         </div>
       </div>`).join('')
     : '<p class="empty-state">The kitchen is empty. Add an item here or ask Pantry to save what you bought.</p>';
@@ -1325,7 +1344,7 @@ function renderContextPanel() {
       <div class="rule-row">
         <div class="rule-row-header">
           <span class="rule-badge ${rule.ruleType}">${rule.ruleType}</span>
-          <button type="button" class="pantry-item-del" data-remove-rule="${escapeHtml(rule.id)}" data-shared-action title="Delete rule" ${!deletionAvailable || !/^\d+$/.test(rule.id) ? 'disabled' : ''}>×</button>
+          <button type="button" class="pantry-item-del" data-remove-rule="${escapeHtml(rule.id)}" data-shared-action aria-label="Delete ${escapeHtml(rule.title)}" title="Delete rule" ${!deletionAvailable || !/^\d+$/.test(rule.id) ? 'disabled' : ''}>×</button>
         </div>
         <div class="rule-title">${escapeHtml(rule.title)}</div>
         ${rule.description ? `<small style="color: var(--muted);">${escapeHtml(rule.description)}</small>` : ''}
@@ -1459,7 +1478,14 @@ function renderExpensesRoute() {
     })),
   });
   const shared = currentSharedAvailability();
-  target.innerHTML = renderExpenseBalances(projection, { online: shared.available, currentIdentity });
+  const recentlyRecorded = currentBillPhase.step === 'recorded' && currentSplit
+    ? {
+      title: currentSplit.billTitle,
+      amountPaise: currentSplit.totalAmountPaise,
+      ownSharePaise: currentBillDraft?.lines.reduce((total, line) => total + (line.allocations.find(allocation => allocation.member.identity.toHexString() === currentIdentity)?.amountPaise ?? 0n), 0n),
+    }
+    : undefined;
+  target.innerHTML = renderExpenseBalances(projection, { online: shared.available, currentIdentity, recentlyRecorded });
   target.querySelectorAll<HTMLButtonElement>('[data-route="conversations"]').forEach(button => {
     button.addEventListener('click', () => navigateTo('conversations'));
   });
@@ -2103,6 +2129,7 @@ function bindMessageActions() {
       });
       if (result.status === 'acknowledged') {
         button.textContent = 'Recorded';
+        currentBillPhase = billRecordingAcknowledged(0n);
         showToast('The household expense was recorded.');
       } else {
         button.textContent = 'Record household expense';
@@ -2126,13 +2153,39 @@ function bindMessageActions() {
       if (!Number.isNaN(date.getTime())) currentBillDraft = setBillDate(currentBillDraft, BigInt(date.getTime()) * 1_000n);
     });
     review.querySelectorAll<HTMLInputElement>('[data-allocation-member]').forEach(input => {
+      if (input.dataset.allocationUnit !== 'rupees') {
+        try {
+          input.value = paiseInputValue(BigInt(input.value || '0'));
+        } catch {
+          input.value = '0';
+        }
+        input.dataset.allocationUnit = 'rupees';
+        input.inputMode = 'decimal';
+        input.min = '0';
+        input.step = '0.01';
+        const name = input.closest('label')?.querySelector<HTMLElement>('.bill-person-name, span')?.textContent?.trim();
+        input.setAttribute('aria-label', `${name || 'Household member'} share in rupees`);
+      }
+      if (!input.closest('.bill-share-field')) {
+        const field = document.createElement('span');
+        field.className = 'bill-share-field';
+        input.before(field);
+        field.append(input);
+      }
       const apply = () => {
         if (!currentBillDraft) return;
         const lineId = input.closest<HTMLElement>('[data-line-id]')?.dataset.lineId || '';
         const member = currentBillDraft.lines.flatMap(line => line.allocations.map(allocation => allocation.member))
           .find(candidate => candidate.identity.toHexString() === input.dataset.allocationMember);
         const exempt = input.closest('label')?.querySelector<HTMLInputElement>('[data-allocation-exempt]')?.checked || false;
-        if (member) currentBillDraft = assignBillLine(currentBillDraft, lineId, member, BigInt(input.value || '0'), { exempt });
+        try {
+          const amountPaise = rupeeInputToPaise(input.value || '0');
+          input.setCustomValidity('');
+          if (member) currentBillDraft = assignBillLine(currentBillDraft, lineId, member, amountPaise, { exempt });
+        } catch (cause) {
+          input.setCustomValidity(cause instanceof Error ? cause.message : 'Enter a valid rupee amount.');
+          input.reportValidity();
+        }
       };
       input.addEventListener('change', apply);
       input.closest('label')?.querySelector<HTMLInputElement>('[data-allocation-exempt]')?.addEventListener('change', apply);
@@ -2263,12 +2316,17 @@ function renderHeaderAndRailBadges() {
   const railUserAvatar = document.querySelector<HTMLElement>('#rail-user-avatar');
   const railFlatName = document.querySelector<HTMLElement>('#rail-flat-name');
   const railResidenceName = document.querySelector<HTMLElement>('#rail-residence-name');
+  const mobileHomeName = document.querySelector<HTMLElement>('#mobile-home-name');
 
   if (railUserName) railUserName.textContent = signedInName || 'Account';
   if (railUserPhone) railUserPhone.textContent = signedInName ? (currentUser.phone || 'Phone not set') : 'Set up your profile';
   if (railUserAvatar) railUserAvatar.textContent = signedInName ? signedInName.slice(0, 1).toUpperCase() : '?';
   if (railFlatName) railFlatName.textContent = activeFlat.flatName || 'Choose a home';
   if (railResidenceName) railResidenceName.textContent = activeFlat.flatId ? `${activeFlat.flatNumber}, ${activeFlat.residenceName}` : 'No shared home selected';
+  if (mobileHomeName) {
+    mobileHomeName.textContent = activeFlat.flatName;
+    mobileHomeName.hidden = !activeFlat.flatName;
+  }
 }
 
 function renderAll() {
@@ -2605,6 +2663,12 @@ function hydrateIdentityState(route: IdentityRoute): IdentityFeatureState {
   const active = activeHomeSelection();
   const residences = isDatabaseSynchronized ? householdGateway.residences() : [];
   const homes = isDatabaseSynchronized ? householdGateway.homes() : [];
+  const memberCounts = new Map<bigint, number>();
+  if (isPeopleSynchronized) {
+    for (const member of connection.db.member.iter()) {
+      memberCounts.set(member.flatId, (memberCounts.get(member.flatId) ?? 0) + 1);
+    }
+  }
   const profile = scopedHouseholdConfig()?.getProfile(currentIdentity || 'local', user.name || currentName()) ?? {
     identityHex: currentIdentity || 'local',
     displayName: user.name || currentName(),
@@ -2629,8 +2693,14 @@ function hydrateIdentityState(route: IdentityRoute): IdentityFeatureState {
       name: home.name,
       label: home.flatNumber,
       residenceName: residences.find(residence => residence.id === home.residenceId)?.name || '',
+      memberCount: isPeopleSynchronized ? (memberCounts.get(home.id) ?? 0) : undefined,
       active: String(home.id) === active.flatId,
     })),
+    selectedHomeId: route === 'join-home'
+      && identityState.selectedHomeId !== undefined
+      && homes.some(home => home.id === identityState.selectedHomeId)
+      ? identityState.selectedHomeId
+      : undefined,
     homesSynchronized: isDatabaseSynchronized,
     accounts: AuthManager.getSavedAccounts().filter(account => Boolean(account.identity?.trim() && account.name.trim())).map(account => ({
       identity: account.identity || '',
@@ -2682,6 +2752,14 @@ function clearDeletedIdentityArtifacts(identity: string, tokenLabel?: string) {
   } catch {}
   const activeId = localStorage.getItem(`tabby_active_conversation:${identity}`);
   if (activeId) conversationIds.push(activeId);
+
+  const scopedConversationPrefix = `tabby_active_conversation:${identity}:`;
+  for (const key of Object.keys(localStorage)) {
+    if (!key.startsWith(scopedConversationPrefix)) continue;
+    const id = localStorage.getItem(key);
+    if (id) conversationIds.push(id);
+    localStorage.removeItem(key);
+  }
 
   const scopedPrefixes = [
     `tabby_local_pantry:${encoded}:`,
@@ -2832,6 +2910,7 @@ function openIdentityFlow(route: IdentityRoute, entryRoute?: IdentityRoute) {
   identityCompletionVisible = false;
   if (route !== 'bring-house-together') editingExistingHomeBasics = false;
   identityEntryRoute = entryRoute;
+  if (route === 'join-home') identityState = { ...identityState, selectedHomeId: undefined };
   identityState = hydrateIdentityState(route);
   const flow = document.querySelector<HTMLElement>('#identity-flow')!;
   const wasHidden = flow.hidden;
@@ -2915,7 +2994,14 @@ function renderIdentityFlowUi() {
   });
   mount.querySelectorAll<HTMLButtonElement>('[data-identity-home]').forEach(button => {
     button.addEventListener('click', async () => {
-      identityState = await switchHome(identityState, BigInt(button.dataset.identityHome || '0'), identityPorts());
+      const homeId = BigInt(button.dataset.identityHome || '0');
+      if (identityState.route === 'join-home' || identityState.route === 'home-access') {
+        identityState = { ...identityState, route: 'join-home', selectedHomeId: homeId, request: 'idle', message: undefined };
+        renderIdentityFlowUi();
+        mount.querySelector<HTMLButtonElement>(`[data-identity-home="${homeId}"]`)?.focus();
+        return;
+      }
+      identityState = await switchHome(identityState, homeId, identityPorts());
       if (identityState.request === 'success' && identityEntryRoute !== 'settings') {
         renderAll();
         closeIdentityFlow();
@@ -2952,7 +3038,7 @@ async function handleIdentityAction(action: string) {
     identityState = { ...identityState, route: identityState.route === 'welcome' ? 'profile' : 'create-home', request: 'idle' };
   } else if (action === 'join-home') {
     requestedHomePath = 'join';
-    identityState = { ...identityState, route: identityState.route === 'welcome' ? 'profile' : 'join-home', request: 'idle' };
+    identityState = { ...identityState, route: identityState.route === 'welcome' ? 'profile' : 'join-home', selectedHomeId: undefined, request: 'idle' };
   } else if (action === 'save-profile') {
     identityState = await saveProfile(identityState, ports);
     if (identityState.request === 'success') {
@@ -2965,6 +3051,14 @@ async function handleIdentityAction(action: string) {
       };
     }
   } else if (action === 'confirm-create-home') identityState = await createHome(identityState, ports);
+  else if (action === 'confirm-join-home' && identityState.selectedHomeId !== undefined) {
+    identityState = await switchHome(identityState, identityState.selectedHomeId, ports);
+    if (identityState.request === 'success') {
+      renderAll();
+      identityState = { ...identityState, route: 'first-task' };
+      identityCompletionVisible = true;
+    }
+  }
   else if (action === 'edit-home-basics') {
     editingExistingHomeBasics = true;
     identityState = hydrateIdentityState('bring-house-together');
@@ -3058,20 +3152,27 @@ async function retryMessage(commandKey: string) {
   await flushActiveOutbox();
 }
 
-document.querySelector<HTMLFormElement>('#chat-form')!.addEventListener('submit', event => {
-  event.preventDefault();
+function sendComposerMessage(value: string): boolean {
+  const text = value.trim();
+  if (!text) return false;
   const input = document.querySelector<HTMLTextAreaElement>('#chat-input')!;
-  const text = input.value.trim();
-  if (!text) return;
   input.value = '';
   input.style.height = '';
   void sendUserMessage(text);
+  return true;
+}
+
+document.querySelector<HTMLFormElement>('#chat-form')!.addEventListener('submit', event => {
+  event.preventDefault();
+  const input = document.querySelector<HTMLTextAreaElement>('#chat-input')!;
+  sendComposerMessage(input.value);
 });
 
 document.querySelector<HTMLTextAreaElement>('#chat-input')!.addEventListener('input', event => {
   const input = event.currentTarget as HTMLTextAreaElement;
   input.style.height = 'auto';
   input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
+  input.style.overflowY = input.scrollHeight > 160 ? 'auto' : 'hidden';
 });
 
 document.querySelector<HTMLTextAreaElement>('#chat-input')!.addEventListener('keydown', event => {
@@ -3263,15 +3364,9 @@ document.querySelector<HTMLFormElement>('#ai-form')!.addEventListener('submit', 
 function createNewConversation() {
   const id = crypto.randomUUID();
   activeConversationId = id;
-  const identity = currentIdentity || 'local';
-  localStorage.setItem(`tabby_active_conversation:${identity}`, id);
-  localStorage.setItem('tabby_active_conversation_default', id);
+  rememberActiveConversation(id);
   if (currentIdentityHasMembership()) {
-    try {
-      connection.reducers.createConversation({ conversationId: id, title: 'New conversation' });
-    } catch (err) {
-      console.warn('createConversation notice:', err);
-    }
+    requestConversationCreation(id);
   }
   conversation = [welcomeMessage];
   saveLocalConversation(id, conversation);
@@ -3305,6 +3400,33 @@ function setContextOpen(open: boolean) {
   drawerController.setOpen(open);
 }
 
+document.querySelector<HTMLButtonElement>('[data-open-context]')?.addEventListener('click', () => {
+  setContextOpen(true);
+});
+
+function setShelfFormOpen(formId: string, open: boolean) {
+  const form = document.querySelector<HTMLFormElement>(`#${formId}`);
+  const trigger = document.querySelector<HTMLButtonElement>(`[data-reveal-shelf-form="${formId}"]`);
+  if (!form || !trigger) return;
+  form.classList.toggle('is-open', open);
+  trigger.setAttribute('aria-expanded', String(open));
+  const defaultLabel = formId === 'quick-pantry-form' ? 'Add item' : 'Add agreement';
+  trigger.textContent = open ? 'Cancel' : defaultLabel;
+  if (open) form.querySelector<HTMLElement>('input, select')?.focus();
+}
+
+document.querySelectorAll<HTMLButtonElement>('[data-reveal-shelf-form]').forEach(button => {
+  button.addEventListener('click', () => {
+    const formId = button.dataset.revealShelfForm || '';
+    const open = button.getAttribute('aria-expanded') !== 'true';
+    document.querySelectorAll<HTMLButtonElement>('[data-reveal-shelf-form]').forEach(other => {
+      const otherFormId = other.dataset.revealShelfForm || '';
+      if (otherFormId && otherFormId !== formId) setShelfFormOpen(otherFormId, false);
+    });
+    setShelfFormOpen(formId, open);
+  });
+});
+
 document.querySelector<HTMLFormElement>('#quick-rule-form')?.addEventListener('submit', async event => {
   event.preventDefault();
   const typeSelect = document.querySelector<HTMLSelectElement>('#quick-rule-type')!;
@@ -3315,6 +3437,7 @@ document.querySelector<HTMLFormElement>('#quick-rule-form')?.addEventListener('s
   const result = await addOrUpdateFlatRule(ruleType, title);
   if (result.status === 'acknowledged') {
     titleInput.value = '';
+    setShelfFormOpen('quick-rule-form', false);
     showToast(`Added an ${ruleType === 'explicit' ? 'agreed' : 'usual'} house rule.`);
   } else if (result.status === 'rejected') {
     showToast(result.error.message, 'error');
@@ -3337,6 +3460,7 @@ document.querySelector<HTMLFormElement>('#quick-pantry-form')?.addEventListener(
   if (result.status === 'acknowledged') {
     nameInput.value = '';
     qtyInput.value = '1';
+    setShelfFormOpen('quick-pantry-form', false);
     showToast(`Added ${quantity} ${name} to the pantry.`);
   } else if (result.status === 'rejected') {
     showToast(result.error.message, 'error');

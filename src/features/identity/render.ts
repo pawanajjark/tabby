@@ -63,7 +63,9 @@ export function renderIdentityScreen(state: IdentityFeatureState): IdentityScree
       ], actions: [{ id: 'confirm-create-home', label: 'Create home', tone: 'primary', disabled: !preview }] };
     }
     case 'join-home':
-      return { ...base, body: 'Select a home below to join it.', actions: [] };
+      return { ...base, body: 'Select a home below, then confirm before joining.', actions: [
+        { id: 'confirm-join-home', label: 'Join selected home', tone: 'primary', disabled: state.selectedHomeId === undefined },
+      ] };
     case 'bring-house-together':
       return { ...base, body: 'Tell housemates to choose this home from the available list, then set the shared defaults everyone will see.', sections: [
         { id: 'basics', heading: 'Household basics', rows: [
