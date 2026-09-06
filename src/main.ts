@@ -1912,6 +1912,7 @@ GUIDELINES:
   );
   const response = generated || 'The AI connection could not complete that request.';
   return { message: { role: 'assistant', agent: 'general', text: response }, summary: response.slice(0, 120) };
+}
 
 async function routeMessage(text: string, responseMessageId?: string) {
   const personalAnswer = TabbyBrain.answerPersonalQuestion(text, currentName());

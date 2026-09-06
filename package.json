@@ -10,7 +10,8 @@
     "dev": "node scripts/dev.mjs",
     "dev:web": "vite",
     "dev:instamart": "npm --prefix instamart-mcp run dev",
-    "build": "tsc --noEmit && vite build",
+    "build": "npm --prefix instamart-mcp run build && tsc --noEmit && vite build",
+    "build:instamart": "npm --prefix instamart-mcp run build",
     "test": "tsx --test tests/*.test.ts",
     "test:instamart": "npm --prefix instamart-mcp test"
   },
