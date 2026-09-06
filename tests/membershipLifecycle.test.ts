@@ -5,6 +5,14 @@ import test from 'node:test';
 const moduleSource = readFileSync(new URL('../spacetimedb/src/index.ts', import.meta.url), 'utf8');
 const clientSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
 
+test('confirmed shopping orders update pantry and shopping state atomically', () => {
+  assert.match(moduleSource, /confirm_shopping_order_to_pantry/);
+  assert.match(moduleSource, /state\.phase !== 'ordered'/);
+  assert.match(moduleSource, /entry\?\.name === 'pantry_sync'/);
+  assert.match(moduleSource, /ctx\.db\.pantryItem/);
+  assert.match(moduleSource, /ctx\.db\.shoppingAgentState\.session_id\.update/);
+});
+
 function exportedBlock(name: string): string {
   const start = moduleSource.indexOf(`export const ${name} =`);
   assert.notEqual(start, -1, `missing ${name}`);

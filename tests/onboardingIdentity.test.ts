@@ -71,6 +71,11 @@ test('name questions use the trusted display name without exposing an identity',
   );
 });
 
+test('named cooking requests route to the chef without requiring AI configuration', async () => {
+  assert.equal(TabbyBrain.detectIntent('I wanna prepare biryani'), 'chef');
+  assert.equal((await TabbyBrain.analyze('I want to make chicken biryani')).intent, 'chef');
+});
+
 test('the synchronized membership state opens first-run onboarding when needed', () => {
   assert.match(mainSource, /maybeShowFirstRunOnboarding\(isJoined\)/);
 });

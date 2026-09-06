@@ -258,6 +258,100 @@ function senderFlatId(ctx: any): bigint {
   return memberRow.flat_id;
 }
 
+export const upsert_shopping_agent_state = spacetimedb.reducer(
+  {
+    session_id: t.string(),
+    phase: t.string(),
+    address_id: t.string(),
+    requested_items_json: t.string(),
+    selected_items_json: t.string(),
+    cart_json: t.string(),
+    payment_json: t.string(),
+    tool_context_json: t.string(),
+    pending_confirmation: t.bool(),
+  },
+  (ctx, args) => {
+    const sessionId = args.session_id.trim();
+    const flatId = senderFlatId(ctx);
+    if (!sessionId || sessionId.length > 128) throw new SenderError('A valid shopping session ID is required.');
+    for (const value of [args.requested_items_json, args.selected_items_json, args.cart_json, args.payment_json, args.tool_context_json]) {
+      if (value.length > 200_000) throw new SenderError('Shopping state payload is too large.');
+      if (value) {
+        try { JSON.parse(value); } catch { throw new SenderError('Shopping state must contain valid JSON.'); }
+      }
+    }
+    const existing = ctx.db.shoppingAgentState.session_id.find(sessionId);
+    if (existing && existing.owner.toHexString() !== ctx.sender.toHexString()) {
+      throw new SenderError('Shopping session belongs to another account.');
+    }
+    const row = { ...args, session_id: sessionId, owner: ctx.sender, flat_id: flatId, updated_at: ctx.timestamp };
+    if (existing) ctx.db.shoppingAgentState.session_id.update(row);
+    else ctx.db.shoppingAgentState.insert(row);
+  },
+);
+
+export const delete_shopping_agent_state = spacetimedb.reducer(
+  { session_id: t.string() },
+  (ctx, { session_id }) => {
+    const existing = ctx.db.shoppingAgentState.session_id.find(session_id);
+    if (!existing) return;
+    if (existing.owner.toHexString() !== ctx.sender.toHexString()) {
+      throw new SenderError('Shopping session belongs to another account.');
+    }
+    ctx.db.shoppingAgentState.session_id.delete(session_id);
+  },
+);
+
+export const confirm_shopping_order_to_pantry = spacetimedb.reducer(
+  {
+    session_id: t.string(),
+    order_id: t.string(),
+    item_names: t.array(t.string()),
+    item_quantities: t.array(t.i32()),
+    item_units: t.array(t.string()),
+  },
+  (ctx, { session_id, order_id, item_names, item_quantities, item_units }) => {
+    const sessionId = session_id.trim();
+    const orderId = order_id.trim();
+    if (!sessionId || !orderId) throw new SenderError('A shopping session and confirmed order ID are required.');
+    if (item_names.length === 0 || item_names.length > 100 || item_names.length !== item_quantities.length || item_names.length !== item_units.length) {
+      throw new SenderError('Purchased pantry items must have matching names, quantities, and units.');
+    }
+    const state = ctx.db.shoppingAgentState.session_id.find(sessionId);
+    if (!state || state.owner.toHexString() !== ctx.sender.toHexString()) throw new SenderError('Shopping session was not found for this account.');
+    if (state.phase !== 'ordered' || state.pending_confirmation) throw new SenderError('Only a confirmed order can update the pantry.');
+    const flatId = senderFlatId(ctx);
+    if (state.flat_id !== flatId) throw new SenderError('Shopping session belongs to a different home.');
+
+    type PantrySyncContext = { name?: string; result?: { orderId?: string; items?: Array<{ name: string; quantity: number; unit: string }> } };
+    let toolContext: PantrySyncContext[] = [];
+    try { toolContext = JSON.parse(state.tool_context_json || '[]') as PantrySyncContext[]; } catch { toolContext = []; }
+    if (toolContext.some(entry => entry?.name === 'pantry_sync' && entry?.result?.orderId === orderId)) return;
+
+    const synchronizedItems: Array<{ name: string; quantity: number; unit: string }> = [];
+    for (let index = 0; index < item_names.length; index += 1) {
+      const name = item_names[index].trim().toLowerCase();
+      const quantity = item_quantities[index];
+      const unit = item_units[index].trim() || 'items';
+      if (!name || quantity <= 0) throw new SenderError('Purchased pantry items require a name and positive quantity.');
+      const existing = [...ctx.db.pantryItem.name.filter(name)].find(row => row.flat_id === flatId);
+      if (existing) {
+        ctx.db.pantryItem.id.update({ ...existing, quantity: existing.quantity + quantity, unit, updated_by: ctx.sender });
+      } else {
+        ctx.db.pantryItem.insert({ id: 0n, flat_id: flatId, name, quantity, unit, updated_by: ctx.sender });
+      }
+      synchronizedItems.push({ name, quantity, unit });
+    }
+
+    toolContext.push({ name: 'pantry_sync', result: { orderId, items: synchronizedItems } });
+    ctx.db.shoppingAgentState.session_id.update({
+      ...state,
+      tool_context_json: JSON.stringify(toolContext.slice(-40)),
+      updated_at: ctx.timestamp,
+    });
+  },
+);
+
 function ensureDefaultResidenceAndFlat(ctx: any): { residenceId: bigint; flatId: bigint } {
   let residences = [...ctx.db.residence.iter()];
   if (residences.length === 0) {

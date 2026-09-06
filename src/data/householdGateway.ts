@@ -26,6 +26,7 @@ export const householdSubscriptionTables = {
     tables.expenseSettlement,
     tables.expenseSplit,
     tables.sharedMemory,
+    tables.myShoppingAgentStates,
   ],
 };
 
@@ -71,6 +72,7 @@ export function createHouseholdGateway(
     billLineAllocations: () => [],
     reminders: () => [],
     reminderDeliveries: () => [],
+    shoppingAgentStates: () => scoped([...connection().db.myShoppingAgentStates.iter()]),
     addPantryItem(input: { name: string; quantity: number; unit: string }) {
       requireActiveHome();
       return connection().reducers.addPantryItem(input);

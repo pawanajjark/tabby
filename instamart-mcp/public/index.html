@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tabby · Instamart MCP</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="mark">t</span><div><strong>tabby</strong><small>Instamart MCP lab</small></div></div>
+      <div class="environment"><span class="status-dot"></span><div><strong id="mode">Connecting</strong><small id="ai-status">Checking agent</small></div></div>
+      <section>
+        <div class="section-title"><span>Available tools</span><b id="tool-count">—</b></div>
+        <label class="tool-search"><span>⌕</span><input id="tool-search" placeholder="Filter tools" /></label>
+        <div class="tool-list" id="tool-list"></div>
+      </section>
+      <p class="sidebar-note">Developer environment only. Checkout always pauses for a refreshed review and confirmation.</p>
+    </aside>
+    <section class="conversation">
+      <header>
+        <div><p class="eyebrow">DIRECT MCP CONVERSATION</p><h1>Shop with Instamart tools</h1></div>
+        <button id="clear-chat" class="quiet">Clear conversation</button>
+      </header>
+      <div class="messages" id="messages" aria-live="polite">
+        <article class="message assistant"><div class="avatar">t</div><div class="bubble"><strong>Instamart agent</strong><p>I’m connected to the seeded developer catalogue. Ask me to search products, inspect your cart, apply coupons, or walk through a developer checkout.</p></div></article>
+        <div class="suggestions" id="suggestions">
+          <button>Show my saved addresses</button><button>Search for tomatoes</button><button>What is in my cart?</button><button>List available coupons</button>
+        </div>
+      </div>
+      <form class="composer" id="composer">
+        <textarea id="prompt" rows="1" placeholder="Ask Instamart, or type /tool get_addresses {}" required></textarea>
+        <div class="composer-foot"><span><code>/tool</code> works without an AI key</span><button type="submit" id="send">Send <kbd>↵</kbd></button></div>
+      </form>
+    </section>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
