@@ -1,3 +1,4 @@
+// Normalizes MCP result envelopes for Tabby's agents and API routes.
 type ContentItem = { type?: string; text?: string };
 
 export function unwrapToolResult(result: unknown): any {

@@ -1,3 +1,4 @@
+// Optional Swiggy staging MCP transport for the parent-hosted runtime.
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { McpToolDefinition, ToolClient } from './types.js';

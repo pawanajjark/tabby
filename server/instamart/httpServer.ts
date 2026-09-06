@@ -1,3 +1,4 @@
+// Local-only bridge started by the parent npm run dev command.
 import 'dotenv/config';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -19,7 +20,7 @@ const server = createServer(async (request, response) => {
   try {
     if (request.method === 'GET' && (request.url === '/' || request.url === '/app.js' || request.url === '/styles.css')) {
       const asset = request.url === '/' ? 'index.html' : request.url.slice(1);
-      const contents = await readFile(new URL(`../public/${asset}`, import.meta.url));
+      const contents = await readFile(new URL(`./public/${asset}`, import.meta.url));
       response.statusCode = 200;
       response.setHeader('Content-Type', asset.endsWith('.html') ? 'text/html; charset=utf-8' : asset.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/css; charset=utf-8');
       return void response.end(contents);

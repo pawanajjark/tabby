@@ -1,3 +1,4 @@
+// Standalone local Instamart tool console.
 const state={sessionId:crypto.randomUUID(),messages:[],tools:[],sending:false};
 const messagesEl=document.querySelector('#messages');const form=document.querySelector('#composer');const prompt=document.querySelector('#prompt');const send=document.querySelector('#send');
 bootstrap();

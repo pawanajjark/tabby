@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { MockInstamartClient } from '../src/mockClient.js';
-import { productSearchQuery, RecipeCheckoutAgent } from '../src/recipeAgent.js';
-import { MemoryShoppingStateStore } from '../src/shoppingState.js';
+import { MockInstamartClient } from '../server/instamart/mockClient.js';
+import { productSearchQuery, RecipeCheckoutAgent } from '../server/instamart/recipeAgent.js';
+import { MemoryShoppingStateStore } from '../server/instamart/shoppingState.js';
 
 test('prepares a recipe cart and requires confirmation before developer checkout', async () => {
   const client = new MockInstamartClient();

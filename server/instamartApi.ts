@@ -1,8 +1,8 @@
-import { createInstamartClient } from '../instamart-mcp/src/clientFactory.js';
-import { RecipeCheckoutAgent } from '../instamart-mcp/src/recipeAgent.js';
-import { MemoryShoppingStateStore, type ShoppingAgentState } from '../instamart-mcp/src/shoppingState.js';
-import { unwrapToolResult } from '../instamart-mcp/src/toolResult.js';
-import type { RecipeItem, ToolClient } from '../instamart-mcp/src/types.js';
+import { createInstamartClient } from './instamart/clientFactory.js';
+import { RecipeCheckoutAgent } from './instamart/recipeAgent.js';
+import { MemoryShoppingStateStore, type ShoppingAgentState } from './instamart/shoppingState.js';
+import { unwrapToolResult } from './instamart/toolResult.js';
+import type { RecipeItem, ToolClient } from './instamart/types.js';
 
 export type InstamartApiAction = 'recipe-cart' | 'checkout' | 'order-status';
 

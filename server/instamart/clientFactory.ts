@@ -1,3 +1,4 @@
+// Selects the parent application's seeded or Swiggy staging client.
 import { MockInstamartClient } from './mockClient.js';
 import { SwiggyRemoteClient } from './remoteClient.js';
 import type { ToolClient } from './types.js';

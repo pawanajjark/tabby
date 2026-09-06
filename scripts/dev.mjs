@@ -76,7 +76,7 @@ async function main() {
   if (await bridgeIsHealthy()) {
     console.log('Using the Instamart developer agent already running on port 8787.');
   } else {
-    start('instamart', resolve('node_modules/tsx/dist/cli.mjs'), ['watch', 'src/httpServer.ts'], resolve('instamart-mcp'));
+    start('instamart', resolve('node_modules/tsx/dist/cli.mjs'), ['watch', 'server/instamart/httpServer.ts']);
     await waitForBridge();
     console.log('Instamart developer agent is ready.');
   }

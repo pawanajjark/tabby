@@ -1,3 +1,4 @@
+// Deterministic recipe-to-cart workflow shared by local and Vercel entrypoints.
 import { randomUUID } from 'node:crypto';
 import { createShoppingStateStore, emptyShoppingState, type ShoppingStateStore } from './shoppingState.js';
 import { payload } from './toolResult.js';

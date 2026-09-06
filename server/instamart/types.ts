@@ -1,3 +1,4 @@
+// Shared contracts for Tabby's parent-hosted Instamart runtime.
 export interface McpToolDefinition {
   name: string;
   description?: string;

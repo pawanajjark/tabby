@@ -1,3 +1,4 @@
+// Standalone MCP chat workflow hosted inside the parent Tabby project.
 import OpenAI from 'openai';
 import { orderIdFromState } from './recipeAgent.js';
 import { unwrapToolResult } from './toolResult.js';
